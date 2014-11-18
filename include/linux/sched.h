@@ -1169,6 +1169,7 @@ struct task_struct {
 	 * of this task
 	 */
 	u32 init_load_pct;
+	u64 run_start;
 #endif
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group *sched_task_group;
