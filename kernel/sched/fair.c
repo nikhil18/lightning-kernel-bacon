@@ -2013,6 +2013,9 @@ static int skip_freq_domain(struct rq *task_rq, struct rq * rq, int reason)
 		skip = (rq->capacity >= task_rq->capacity);
 		break;
 
+	case MOVE_TO_POWER_EFFICIENT_CPU:
+		skip = rq->capacity != task_rq->capacity;
+		break;
 	default:
 		return 0;
 	}
