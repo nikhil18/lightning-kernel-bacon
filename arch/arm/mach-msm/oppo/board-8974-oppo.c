@@ -50,11 +50,17 @@
 #include <linux/gpio.h>
 #include <linux/pcb_version.h>
 
+#ifdef CONFIG_KEXEC_HARDBOOT
+#include <asm/setup.h>
+#include <asm/memory.h>
+#include <linux/memblock.h>
+#define OPPO_PERSISTENT_RAM_SIZE	(SZ_1M)
+#endif
+
 #ifdef CONFIG_PSTORE_RAM
 #include <linux/pstore_ram.h>
 #include <linux/memblock.h>
 
-#define OPPO_PERSISTENT_RAM_SIZE SZ_1M
 #define OPPO_RAM_CONSOLE_BASE (PLAT_PHYS_OFFSET + SZ_1G + SZ_256M)
 
 static struct ramoops_platform_data oppo_ramoops_data = {
@@ -96,6 +102,16 @@ static void __init oppo_add_persistent_device(void)
 
 void __init msm_8974_reserve(void)
 {
+#ifdef CONFIG_KEXEC_HARDBOOT
+	// Reserve space for hardboot page, just before the ram_console
+	struct membank* bank = &meminfo.bank[0];
+	phys_addr_t start = bank->start + bank->size - SZ_1M - OPPO_PERSISTENT_RAM_SIZE;
+	int ret = memblock_remove(start, SZ_1M);
+	if(!ret)
+		pr_info("Hardboot page reserved at 0x%X\n", start);
+	else
+		pr_err("Failed to reserve space for hardboot page at 0x%X!\n", start);
+#endif
 	of_scan_flat_dt(dt_scan_for_memory_reserve, NULL);
 }
 
