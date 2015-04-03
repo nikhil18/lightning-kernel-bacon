@@ -17,8 +17,8 @@
 #include <linux/touchboost.h>
 
 /* Conservative governor macros */
-#define DEF_FREQUENCY_UP_THRESHOLD		(95)
-#define DEF_FREQUENCY_DOWN_THRESHOLD		(30)
+#define DEF_FREQUENCY_UP_THRESHOLD		(64)
+#define DEF_FREQUENCY_DOWN_THRESHOLD		(22)
 #define DEF_FREQUENCY_TWOSTEP_THRESHOLD		(60)
 #define DEF_FREQUENCY_STEP			(5)
 #define DEF_SAMPLING_DOWN_FACTOR		(1)
