@@ -1380,14 +1380,19 @@ void wake_up_if_idle(int cpu)
 	struct rq *rq = cpu_rq(cpu);
 	unsigned long flags;
 
-	if (!is_idle_task(rq->curr))
-		return;
+	rcu_read_lock();
+
+	if (!is_idle_task(rcu_dereference(rq->curr)))
+		goto out;
 
 	grq_lock_irqsave(&flags);
 	if (likely(is_idle_task(rq->curr)))
 		smp_send_reschedule(cpu);
 	/* Else cpu is not in idle, do nothing here */
 	grq_unlock_irqrestore(&flags);
+
+out:
+	rcu_read_unlock();
 }
 
 static inline void ttwu_activate(struct task_struct *p, struct rq *rq,
