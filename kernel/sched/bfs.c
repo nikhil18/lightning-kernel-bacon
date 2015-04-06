@@ -242,13 +242,6 @@ DEFINE_PER_CPU_SHARED_ALIGNED(struct rq, runqueues);
 static DEFINE_MUTEX(sched_hotcpu_mutex);
 
 #ifdef CONFIG_SMP
-struct rq *cpu_rq(int cpu)
-{
-        return &per_cpu(runqueues, (cpu));
-}
-#define this_rq()               (&__get_cpu_var(runqueues))
-#define task_rq(p)              cpu_rq(task_cpu(p))
-#define cpu_curr(cpu)           (cpu_rq(cpu)->curr)
 /*
  * sched_domains_mutex serialises calls to init_sched_domains,
  * detach_destroy_domains and partition_sched_domains.
@@ -321,11 +314,6 @@ static inline void update_clocks(struct rq *rq)
 	rq->last_niffy = grq.niffies;
 }
 #else /* CONFIG_SMP */
-static struct rq *uprq;
-#define cpu_rq(cpu)	(uprq)
-#define this_rq()	(uprq)
-#define task_rq(p)	(uprq)
-#define cpu_curr(cpu)	((uprq)->curr)
 static inline int cpu_of(struct rq *rq)
 {
 	return 0;
@@ -345,7 +333,6 @@ static inline void update_clocks(struct rq *rq)
 	grq.niffies += ndiff;
 }
 #endif
-#define raw_rq()	(&__raw_get_cpu_var(runqueues))
 
 #include "stats.h"
 
