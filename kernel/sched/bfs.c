@@ -3358,11 +3358,9 @@ need_resched:
 		 * this task called schedule() in the past. prev == current
 		 * is still correct, but it can be moved to another cpu/rq.
 		 */
-		/*
 		cpu = smp_processor_id();
 		rq = cpu_rq(cpu);
 		idle = rq->idle;
-		*/
 	} else
 		grq_unlock_irq();
 
