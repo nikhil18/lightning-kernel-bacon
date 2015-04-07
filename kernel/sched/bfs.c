@@ -188,6 +188,10 @@ struct global_rq {
 	unsigned long qnr; /* queued not running */
 	cpumask_t cpu_idle_map;
 	bool idle_cpus;
+#ifndef CONFIG_64BIT
+	raw_spinlock_t priodl_lock;
+#endif
+	u64 rq_priodls[NR_CPUS];
 #endif
 	int noc; /* num_online_cpus stored and updated when it changes */
 	u64 niffies; /* Nanosecond jiffies */
@@ -1315,13 +1319,25 @@ static void try_preempt(struct task_struct *p, struct rq *this_rq)
 	cpu = cpumask_first(&tmp);
 	rq = cpu_rq(cpu);
 	highest_prio_rq = rq;
-	highest_priodl = rq->rq_priodl;
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+	raw_spin_lock(&grq.priodl_lock);
+#endif
+	highest_priodl = grq.rq_priodls[cpu];
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+	raw_spin_unlock(&grq.priodl_lock);
+#endif
 
 	for (;cpu = cpumask_next(cpu, &tmp), cpu < nr_cpu_ids;) {
 		u64 rq_priodl;
 
 		rq = cpu_rq(cpu);
-		rq_priodl = rq->rq_priodl;
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+		raw_spin_lock(&grq.priodl_lock);
+#endif
+		rq_priodl = grq.rq_priodls[cpu];
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+		raw_spin_unlock(&grq.priodl_lock);
+#endif
 		if (rq_priodl > highest_priodl ) {
 			highest_priodl = rq_priodl;
 		}
@@ -1340,7 +1356,7 @@ static void try_preempt(struct task_struct *p, struct rq *this_rq)
 {
 	if (p->policy == SCHED_IDLEPRIO)
 		return;
-	if (can_preempt(p, uprq->rq_priodl))
+	if (can_preempt(p, grq.rq_priodls[0]))
 		resched_curr(uprq);
 }
 #endif /* CONFIG_SMP */
@@ -3135,7 +3151,13 @@ static inline void set_rq_task(struct rq *rq, struct task_struct *p)
 	rq->rq_last_ran = p->last_ran = rq->clock_task;
 	rq->rq_policy = p->policy;
 	rq->rq_prio = p->prio;
-	rq->rq_priodl = p->priodl;
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+	raw_spin_lock(&grq.priodl_lock);
+#endif
+	grq.rq_priodls[cpu_of(rq)] = p->priodl;
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+	raw_spin_unlock(&grq.priodl_lock);
+#endif
 	rq->rq_running = (p != rq->idle);
 }
 
@@ -3144,7 +3166,13 @@ static inline void reset_rq_task(struct rq *rq, struct task_struct *p)
 	rq->rq_policy = p->policy;
 	rq->rq_prio = p->prio;
 	rq->rq_deadline = p->deadline;
-	rq->rq_priodl = p->priodl;
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+	raw_spin_lock(&grq.priodl_lock);
+#endif
+	grq.rq_priodls[cpu_of(rq)] = p->priodl;
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+	raw_spin_unlock(&grq.priodl_lock);
+#endif
 }
 
 /*
@@ -5099,7 +5127,6 @@ void init_idle(struct task_struct *idle, int cpu)
 	/* Setting prio to illegal value shouldn't matter when never queued */
 	idle->prio = PRIO_LIMIT;
 	idle->deadline = 0ULL;
-	update_task_priodl(idle);
 	set_rq_task(rq, idle);
 	do_set_cpus_allowed(idle, &cpumask_of_cpu(cpu));
 	/* Silence PROVE_RCU */
@@ -7004,6 +7031,9 @@ void __init sched_init(void)
 	init_defrootdomain();
 	grq.qnr = grq.idle_cpus = 0;
 	cpumask_clear(&grq.cpu_idle_map);
+#ifndef CONFIG_64BIT
+	raw_spin_lock_init(&grq.priodl_lock);
+#endif
 #else
 	uprq = &per_cpu(runqueues, 0);
 #endif
