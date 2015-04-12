@@ -88,8 +88,6 @@
 
 #include "bfs_sched.h"
 
-ATOMIC_NOTIFIER_HEAD(migration_notifier_head);
-
 #define rt_prio(prio)		unlikely((prio) < MAX_RT_PRIO)
 #define rt_task(p)		rt_prio((p)->prio)
 #define rt_queue(rq)		rt_prio((rq)->rq_prio)

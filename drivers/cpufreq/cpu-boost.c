@@ -303,6 +303,7 @@ static int boost_mig_sync_thread(void *data)
 	return 0;
 }
 
+#ifndef CONFIG_SCHED_BFS
 static int boost_migration_notify(struct notifier_block *nb,
 				unsigned long unused, void *arg)
 {
@@ -356,6 +357,7 @@ static int boost_migration_notify(struct notifier_block *nb,
 static struct notifier_block boost_migration_nb = {
 	.notifier_call = boost_migration_notify,
 };
+#endif
 
 static void do_input_boost(struct work_struct *work)
 {
@@ -554,8 +556,11 @@ static int cpu_boost_init(void)
 		set_cpus_allowed(s->thread, *cpumask_of(cpu));
 	}
 	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
+#ifndef CONFIG_SCHED_BFS
 	atomic_notifier_chain_register(&migration_notifier_head,
 					&boost_migration_nb);
+#endif
+
 	ret = input_register_handler(&cpuboost_input_handler);
 	if (ret)
 		pr_err("Cannot register cpuboost input handler.\n");
