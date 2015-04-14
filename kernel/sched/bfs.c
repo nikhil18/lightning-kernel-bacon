@@ -4241,25 +4241,59 @@ static inline struct task_struct *find_process_by_pid(pid_t pid)
 	return pid ? find_task_by_vpid(pid) : current;
 }
 
-/* Actually do priority change: must hold grq lock. */
-static void
-__setscheduler(struct task_struct *p, struct rq *rq, int policy, int prio)
+/*
+ * sched_setparam() passes in -1 for its policy, to let the functions
+ * it calls know not to change it.
+ */
+#define SETPARAM_POLICY -1
+
+static void __setscheduler_params(struct task_struct *p,
+		const struct sched_attr *attr)
 {
-	int oldrtprio, oldprio;
+	int policy = attr->sched_policy;
+
+	if (policy == SETPARAM_POLICY)
+		policy = p->policy;
 
 	p->policy = policy;
-	oldrtprio = p->rt_priority;
-	p->rt_priority = prio;
+
+	/*
+	 * allow normal nice value to be set, but will not have any
+	 * effect on scheduling until the task not SCHED_NORMAL/
+	 * SCHED_BATCH
+	 */
+	p->static_prio = NICE_TO_PRIO(attr->sched_nice);
+
+	/*
+	 * __sched_setscheduler() ensures attr->sched_priority == 0 when
+	 * !rt_policy. Always setting this ensures that things like
+	 * getparam()/getattr() don't report silly values for !rt tasks.
+	 */
+	p->rt_priority = attr->sched_priority;
 	p->normal_prio = normal_prio(p);
-	oldprio = p->prio;
-	/* we are holding p->pi_lock already */
-	p->prio = rt_mutex_getprio(p);
+}
+
+/* Actually do priority change: must hold grq lock. */
+static void __setscheduler(struct rq *rq, struct task_struct *p,
+			   const struct sched_attr *attr)
+{
+	int oldrtprio = p->rt_priority;
+	int oldprio = p->prio;
+
+	__setscheduler_params(p, attr);
+
+	/*
+	 * If we get here, there was no pi waiters boosting the
+	 * task. It is safe to use the normal prio.
+	 */
+	p->prio = normal_prio(p);
 	update_task_priodl(p);
+
 	if (task_running(p)) {
 		reset_rq_task(rq, p);
 		/* Resched only if we might now be preempted */
 		if (p->prio > oldprio || p->rt_priority > oldrtprio)
-			resched_task(p);
+			resched_curr(rq);
 	}
 }
 
@@ -4279,35 +4313,19 @@ static bool check_same_owner(struct task_struct *p)
 	return match;
 }
 
-static int __sched_setscheduler(struct task_struct *p, int policy,
-				const struct sched_param *param, bool user)
+static int __sched_setscheduler(struct task_struct *p,
+				const struct sched_attr *attr,
+				bool user)
 {
-	struct sched_param zero_param = { .sched_priority = 0 };
-	int queued, retval, oldpolicy = -1;
-	unsigned long flags, rlim_rtprio = 0;
-	int reset_on_fork;
+	int newprio = MAX_RT_PRIO - 1 - attr->sched_priority;
+	int queued, retval, oldprio, oldpolicy = -1;
+	int policy = attr->sched_policy;
+	unsigned long flags;
 	struct rq *rq;
+	int reset_on_fork;
 
 	/* may grab non-irq protected spin_locks */
 	BUG_ON(in_interrupt());
-
-	if (is_rt_policy(policy) && !capable(CAP_SYS_NICE)) {
-		unsigned long lflags;
-
-		if (!lock_task_sighand(p, &lflags))
-			return -ESRCH;
-		rlim_rtprio = task_rlimit(p, RLIMIT_RTPRIO);
-		unlock_task_sighand(p, &lflags);
-		if (rlim_rtprio)
-			goto recheck;
-		/*
-		 * If the caller requested an RT policy without having the
-		 * necessary rights, we downgrade the policy to SCHED_ISO.
-		 * We also set the parameter to zero to pass the checks.
-		 */
-		policy = SCHED_ISO;
-		param = &zero_param;
-	}
 recheck:
 	/* double check policy once rq lock held */
 	if (policy < 0) {
@@ -4325,11 +4343,11 @@ recheck:
 	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL and
 	 * SCHED_BATCH is 0.
 	 */
-	if (param->sched_priority < 0 ||
-	    (p->mm && param->sched_priority > MAX_USER_RT_PRIO - 1) ||
-	    (!p->mm && param->sched_priority > MAX_RT_PRIO - 1))
+	if (attr->sched_priority < 0 ||
+	    (p->mm && attr->sched_priority > MAX_USER_RT_PRIO - 1) ||
+	    (!p->mm && attr->sched_priority > MAX_RT_PRIO - 1))
 		return -EINVAL;
-	if (is_rt_policy(policy) != (param->sched_priority != 0))
+	if (is_rt_policy(policy) != (attr->sched_priority != 0))
 		return -EINVAL;
 
 	/*
@@ -4345,8 +4363,8 @@ recheck:
 				return -EPERM;
 
 			/* can't increase priority */
-			if (param->sched_priority > p->rt_priority &&
-			    param->sched_priority > rlim_rtprio)
+			if (attr->sched_priority > p->rt_priority &&
+			    attr->sched_priority > rlim_rtprio)
 				return -EPERM;
 		} else {
 			switch (p->policy) {
@@ -4415,8 +4433,7 @@ recheck:
 	 * If not changing anything there's no need to proceed further:
 	 */
 	if (unlikely(policy == p->policy && (!is_rt_policy(policy) ||
-			param->sched_priority == p->rt_priority))) {
-
+			attr->sched_priority == p->rt_priority))) {
 		__task_grq_unlock();
 		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 		return 0;
@@ -4429,23 +4446,81 @@ recheck:
 		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 		goto recheck;
 	}
-	update_clocks(rq);
+
 	p->sched_reset_on_fork = reset_on_fork;
+	oldprio = p->prio;
+
+	/*
+	 * Special case for priority boosted tasks.
+	 *
+	 * If the new priority is lower or equal (user space view)
+	 * than the current (boosted) priority, we just store the new
+	 * normal parameters and do not touch the scheduler class and
+	 * the runqueue. This will be done when the task deboost
+	 * itself.
+	 */
+	if (rt_mutex_check_prio(p, newprio)) {
+		__setscheduler_params(p, attr);
+		__task_grq_unlock();
+		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
+		return 0;
+	}
 
 	queued = task_queued(p);
 	if (queued)
 		dequeue_task(p);
-	__setscheduler(p, rq, policy, param->sched_priority);
+	__setscheduler(rq, p, attr);
 	if (queued) {
 		enqueue_task(p);
 		try_preempt(p, rq);
 	}
+
+	check_task_changed(rq, p, oldprio);
 	__task_grq_unlock();
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 
 	rt_mutex_adjust_pi(p);
 out:
 	return 0;
+}
+
+static int _sched_setscheduler(struct task_struct *p, int policy,
+			       const struct sched_param *param, bool check)
+{
+	struct sched_attr attr = {
+		.sched_policy   = policy,
+		.sched_priority = param->sched_priority,
+		.sched_nice     = PRIO_TO_NICE(p->static_prio),
+	};
+	unsigned long rlim_rtprio = 0;
+
+	/* Fixup the legacy SCHED_RESET_ON_FORK hack. */
+	if ((policy != SETPARAM_POLICY) && (policy & SCHED_RESET_ON_FORK)) {
+		attr.sched_flags |= SCHED_FLAG_RESET_ON_FORK;
+		policy &= ~SCHED_RESET_ON_FORK;
+		attr.sched_policy = policy;
+	}
+
+	if (is_rt_policy(policy) && !capable(CAP_SYS_NICE)) {
+		unsigned long lflags;
+
+		if (!lock_task_sighand(p, &lflags))
+			return -ESRCH;
+		rlim_rtprio = task_rlimit(p, RLIMIT_RTPRIO);
+		unlock_task_sighand(p, &lflags);
+		if (!rlim_rtprio) {
+			/*
+			 * If the caller requested an RT policy without having the
+			 * necessary rights, we downgrade the policy to SCHED_ISO.
+			 * We also set the attr to zero to pass the checks.
+			 */
+			attr.sched_policy = SCHED_ISO;
+			attr.sched_priority = 0;
+			attr.sched_nice = 0;
+		}
+	}
+
+	return __sched_setscheduler(p, &attr, check);
 }
 
 /**
@@ -4461,10 +4536,16 @@ out:
 int sched_setscheduler(struct task_struct *p, int policy,
 		       const struct sched_param *param)
 {
-	return __sched_setscheduler(p, policy, param, true);
+	return _sched_setscheduler(p, policy, param, true);
 }
 
 EXPORT_SYMBOL_GPL(sched_setscheduler);
+
+int sched_setattr(struct task_struct *p, const struct sched_attr *attr)
+{
+	return __sched_setscheduler(p, attr, true);
+}
+EXPORT_SYMBOL_GPL(sched_setattr);
 
 /**
  * sched_setscheduler_nocheck - change the scheduling policy and/or RT priority of a thread from kernelspace.
@@ -4482,7 +4563,7 @@ EXPORT_SYMBOL_GPL(sched_setscheduler);
 int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 			       const struct sched_param *param)
 {
-	return __sched_setscheduler(p, policy, param, false);
+	return _sched_setscheduler(p, policy, param, false);
 }
 
 static int
@@ -4507,6 +4588,78 @@ do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 	return retval;
 }
 
+/*
+ * Mimics kernel/events/core.c perf_copy_attr().
+ */
+static int sched_copy_attr(struct sched_attr __user *uattr,
+			   struct sched_attr *attr)
+{
+	u32 size;
+	int ret;
+
+	if (!access_ok(VERIFY_WRITE, uattr, SCHED_ATTR_SIZE_VER0))
+		return -EFAULT;
+
+	/*
+	 * zero the full structure, so that a short copy will be nice.
+	 */
+	memset(attr, 0, sizeof(*attr));
+
+	ret = get_user(size, &uattr->size);
+	if (ret)
+		return ret;
+
+	if (size > PAGE_SIZE)	/* silly large */
+		goto err_size;
+
+	if (!size)		/* abi compat */
+		size = SCHED_ATTR_SIZE_VER0;
+
+	if (size < SCHED_ATTR_SIZE_VER0)
+		goto err_size;
+
+	/*
+	 * If we're handed a bigger struct than we know of,
+	 * ensure all the unknown bits are 0 - i.e. new
+	 * user-space does not rely on any kernel feature
+	 * extensions we dont know about yet.
+	 */
+	if (size > sizeof(*attr)) {
+		unsigned char __user *addr;
+		unsigned char __user *end;
+		unsigned char val;
+
+		addr = (void __user *)uattr + sizeof(*attr);
+		end  = (void __user *)uattr + size;
+
+		for (; addr < end; addr++) {
+			ret = get_user(val, addr);
+			if (ret)
+				return ret;
+			if (val)
+				goto err_size;
+		}
+		size = sizeof(*attr);
+	}
+
+	ret = copy_from_user(attr, uattr, size);
+	if (ret)
+		return -EFAULT;
+
+	/*
+	 * XXX: do we want to be lenient like existing syscalls; or do we want
+	 * to be strict and return an error on out-of-bounds values?
+	 */
+	attr->sched_nice = clamp(attr->sched_nice, -20, 19);
+
+	/* sched/core.c uses zero here but we already know ret is zero */
+	return 0;
+
+err_size:
+	put_user(sizeof(*attr), &uattr->size);
+	return -E2BIG;
+}
+
 /**
  * sys_sched_setscheduler - set/change the scheduler policy and RT priority
  * @pid: the pid in question.
@@ -4525,12 +4678,6 @@ asmlinkage long sys_sched_setscheduler(pid_t pid, int policy,
 	return do_sched_setscheduler(pid, policy, param);
 }
 
-/*
- * sched_setparam() passes in -1 for its policy, to let the functions
- * it calls know not to change it.
- */
-#define SETPARAM_POLICY	-1
-
 /**
  * sys_sched_setparam - set/change the RT priority of a thread
  * @pid: the pid in question.
@@ -4541,6 +4688,38 @@ asmlinkage long sys_sched_setscheduler(pid_t pid, int policy,
 SYSCALL_DEFINE2(sched_setparam, pid_t, pid, struct sched_param __user *, param)
 {
 	return do_sched_setscheduler(pid, SETPARAM_POLICY, param);
+}
+
+/**
+ * sys_sched_setattr - same as above, but with extended sched_attr
+ * @pid: the pid in question.
+ * @uattr: structure containing the extended parameters.
+ */
+SYSCALL_DEFINE3(sched_setattr, pid_t, pid, struct sched_attr __user *, uattr,
+			       unsigned int, flags)
+{
+	struct sched_attr attr;
+	struct task_struct *p;
+	int retval;
+
+	if (!uattr || pid < 0 || flags)
+		return -EINVAL;
+
+	retval = sched_copy_attr(uattr, &attr);
+	if (retval)
+		return retval;
+
+	if ((int)attr.sched_policy < 0)
+		return -EINVAL;
+
+	rcu_read_lock();
+	retval = -ESRCH;
+	p = find_process_by_pid(pid);
+	if (p != NULL)
+		retval = sched_setattr(p, &attr);
+	rcu_read_unlock();
+
+	return retval;
 }
 
 /**
@@ -4609,6 +4788,89 @@ SYSCALL_DEFINE2(sched_getparam, pid_t, pid, struct sched_param __user *, param)
 	retval = copy_to_user(param, &lp, sizeof(*param)) ? -EFAULT : 0;
 
 out_nounlock:
+	return retval;
+
+out_unlock:
+	rcu_read_unlock();
+	return retval;
+}
+
+static int sched_read_attr(struct sched_attr __user *uattr,
+			   struct sched_attr *attr,
+			   unsigned int usize)
+{
+	int ret;
+
+	if (!access_ok(VERIFY_WRITE, uattr, usize))
+		return -EFAULT;
+
+	/*
+	 * If we're handed a smaller struct than we know of,
+	 * ensure all the unknown bits are 0 - i.e. old
+	 * user-space does not get uncomplete information.
+	 */
+	if (usize < sizeof(*attr)) {
+		unsigned char *addr;
+		unsigned char *end;
+
+		addr = (void *)attr + usize;
+		end  = (void *)attr + sizeof(*attr);
+
+		for (; addr < end; addr++) {
+			if (*addr)
+				return -EFBIG;
+		}
+
+		attr->size = usize;
+	}
+
+	ret = copy_to_user(uattr, attr, attr->size);
+	if (ret)
+		return -EFAULT;
+
+	/* sched/core.c uses zero here but we already know ret is zero */
+	return ret;
+}
+
+/**
+ * sys_sched_getattr - similar to sched_getparam, but with sched_attr
+ * @pid: the pid in question.
+ * @uattr: structure containing the extended parameters.
+ * @size: sizeof(attr) for fwd/bwd comp.
+ * @flags: for future extension.
+ */
+SYSCALL_DEFINE4(sched_getattr, pid_t, pid, struct sched_attr __user *, uattr,
+		unsigned int, size, unsigned int, flags)
+{
+	struct sched_attr attr = {
+		.size = sizeof(struct sched_attr),
+	};
+	struct task_struct *p;
+	int retval;
+
+	if (!uattr || pid < 0 || size > PAGE_SIZE ||
+	    size < SCHED_ATTR_SIZE_VER0 || flags)
+		return -EINVAL;
+
+	rcu_read_lock();
+	p = find_process_by_pid(pid);
+	retval = -ESRCH;
+	if (!p)
+		goto out_unlock;
+
+	retval = security_task_getscheduler(p);
+	if (retval)
+		goto out_unlock;
+
+	attr.sched_policy = p->policy;
+	if (rt_task(p))
+		attr.sched_priority = p->rt_priority;
+	else
+		attr.sched_nice = task_nice(p);
+
+	rcu_read_unlock();
+
+	retval = sched_read_attr(uattr, &attr, size);
 	return retval;
 
 out_unlock:
@@ -7207,13 +7469,16 @@ EXPORT_SYMBOL(__might_sleep);
 #ifdef CONFIG_MAGIC_SYSRQ
 static void normalize_task(struct rq *rq, struct task_struct *p)
 {
+	struct sched_attr attr = {
+		.sched_policy = SCHED_NORMAL,
+	};
 	int old_prio = p->prio;
 	int queued;
 
 	queued = task_queued(p);
 	if (queued)
 		dequeue_task(p);
-	__setscheduler(p, rq, SCHED_NORMAL, 0);
+	__setscheduler(rq, p, &attr);
 	if (queued) {
 		enqueue_task(p);
 		try_preempt(p, rq);
