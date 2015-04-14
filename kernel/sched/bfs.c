@@ -4875,7 +4875,7 @@ int __sched yield_to(struct task_struct *p, bool preempt)
 	rq->rq_time_slice = 0;
 	if (p->time_slice > timeslice())
 		p->time_slice = timeslice();
-	if (preempt && rq != rq)
+	if (preempt && rq != p_rq)
 		resched_curr(p_rq);
 out_unlock:
 	grq_unlock_irqrestore(&flags);
