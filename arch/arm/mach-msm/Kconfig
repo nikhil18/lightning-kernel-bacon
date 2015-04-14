@@ -1398,4 +1398,10 @@ config SPEED_LEVEL_INTERFACE
         help
          Allow SPEED level to be shown into specific kernel apps
 
+config CHARGE_LEVEL
+	bool "Charge level interface"
+	default y
+	help
+	  Allows configuration of ac and usb charging levels	
+
 endif
