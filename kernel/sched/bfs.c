@@ -612,14 +612,6 @@ static void enqueue_task(struct task_struct *p)
 	sched_info_queued(p);
 }
 
-/* Only idle task does this as a real time task*/
-static inline void enqueue_task_head(struct task_struct *p)
-{
-	__set_bit(p->prio, grq.prio_bitmap);
-	list_add(&p->run_list, grq.queue + p->prio);
-	sched_info_queued(p);
-}
-
 static inline void requeue_task(struct task_struct *p)
 {
 	sched_info_queued(p);
@@ -874,16 +866,6 @@ static inline int locality_diff(struct task_struct *p, struct rq *rq)
 #endif /* CONFIG_SMP */
 EXPORT_SYMBOL_GPL(cpu_scaling);
 EXPORT_SYMBOL_GPL(cpu_nonscaling);
-
-/*
- * activate_idle_task - move idle task to the _front_ of runqueue.
- */
-static inline void activate_idle_task(struct task_struct *p)
-{
-	enqueue_task_head(p);
-	grq.nr_running++;
-	inc_qnr();
-}
 
 static inline int normal_prio(struct task_struct *p)
 {
