@@ -185,7 +185,7 @@ struct global_rq {
 #ifdef CONFIG_SMP
 	unsigned long qnr; /* queued not running */
 	cpumask_t cpu_idle_map;
-	cpumask_t non_scaled_cpumask;
+	bool idle_cpus;
 #ifndef CONFIG_64BIT
 	raw_spinlock_t priodl_lock;
 #endif
@@ -612,6 +612,14 @@ static void enqueue_task(struct task_struct *p)
 	sched_info_queued(p);
 }
 
+/* Only idle task does this as a real time task*/
+static inline void enqueue_task_head(struct task_struct *p)
+{
+	__set_bit(p->prio, grq.prio_bitmap);
+	list_add(&p->run_list, grq.queue + p->prio);
+	sched_info_queued(p);
+}
+
 static inline void requeue_task(struct task_struct *p)
 {
 	sched_info_queued(p);
@@ -672,188 +680,99 @@ static inline int queued_notrunning(void)
  */
 static inline void set_cpuidle_map(int cpu)
 {
-	if (likely(cpu_online(cpu)))
+	if (likely(cpu_online(cpu))) {
 		cpu_set(cpu, grq.cpu_idle_map);
+		grq.idle_cpus = true;
+	}
 }
 
 static inline void clear_cpuidle_map(int cpu)
 {
 	cpu_clear(cpu, grq.cpu_idle_map);
+	if (cpus_empty(grq.cpu_idle_map))
+		grq.idle_cpus = false;
 }
 
-static inline bool suitable_idle_cpus(struct task_struct *p)
+static bool suitable_idle_cpus(struct task_struct *p)
 {
-	return (cpumask_intersects(&p->cpus_allowed, &grq.cpu_idle_map));
+	if (!grq.idle_cpus)
+		return false;
+	return (cpus_intersects(p->cpus_allowed, grq.cpu_idle_map));
 }
+
+#define CPUIDLE_DIFF_THREAD	(1)
+#define CPUIDLE_DIFF_CORE	(2)
+#define CPUIDLE_CACHE_BUSY	(4)
+#define CPUIDLE_DIFF_CPU	(8)
+#define CPUIDLE_THREAD_BUSY	(16)
+#define CPUIDLE_THROTTLED	(32)
+#define CPUIDLE_DIFF_NODE	(64)
 
 static inline bool scaling_rq(struct rq *rq);
 
-static const struct cpumask *cpu_cpu_mask(int cpu)
-{
-	return cpumask_of_node(cpu_to_node(cpu));
-}
-
 /*
- * The best idle cpu is first-matched by the following cpumask list
+ * The best idle CPU is chosen according to the CPUIDLE ranking above where the
+ * lowest value would give the most suitable CPU to schedule p onto next. The
+ * order works out to be the following:
  *
- * Non scaled same cpu as task originally runs on
- * Non scaled SMT of the cup
- * Non scaled cores/threads shares last level cache
- * Scaled same cpu as task originally runs on
- * Scaled SMT of the cup
- * Scaled cores/threads shares last level cache
- * Non scaled cores within the same physical cpu
- * Non scaled cpus/Cores within the local NODE
- * Scaled cores within the same physical cpu
- * Scaled cpus/Cores within the local NODE
- * All cpus avariable
+ * Same core, idle or busy cache, idle or busy threads
+ * Other core, same cache, idle or busy cache, idle threads.
+ * Same node, other CPU, idle cache, idle threads.
+ * Same node, other CPU, busy cache, idle threads.
+ * Other core, same cache, busy threads.
+ * Same node, other CPU, busy threads.
+ * Other node, other CPU, idle cache, idle threads.
+ * Other node, other CPU, busy cache, idle threads.
+ * Other node, other CPU, busy threads.
  */
-static inline int llc_cpu_check(int cpu, cpumask_t *cpumask, cpumask_t *res_mask)
+static void
+resched_best_mask(int best_cpu, struct rq *rq, cpumask_t *tmpmask)
 {
-	return (
+	int best_ranking = CPUIDLE_DIFF_NODE | CPUIDLE_THROTTLED |
+		CPUIDLE_THREAD_BUSY | CPUIDLE_DIFF_CPU | CPUIDLE_CACHE_BUSY |
+		CPUIDLE_DIFF_CORE | CPUIDLE_DIFF_THREAD;
+	int cpu_tmp;
+
+	if (cpu_isset(best_cpu, *tmpmask))
+		goto out;
+
+	for_each_cpu_mask(cpu_tmp, *tmpmask) {
+		int ranking, locality;
+		struct rq *tmp_rq;
+
+		ranking = 0;
+		tmp_rq = cpu_rq(cpu_tmp);
+
+		locality = rq->cpu_locality[cpu_tmp];
+#ifdef CONFIG_NUMA
+		if (locality > 3)
+			ranking |= CPUIDLE_DIFF_NODE;
+		else
+#endif
+		if (locality > 2)
+			ranking |= CPUIDLE_DIFF_CPU;
+#ifdef CONFIG_SCHED_MC
+		else if (locality == 2)
+			ranking |= CPUIDLE_DIFF_CORE;
+		if (!(tmp_rq->cache_idle(cpu_tmp)))
+			ranking |= CPUIDLE_CACHE_BUSY;
+#endif
 #ifdef CONFIG_SCHED_SMT
-	/* SMT of the cpu */
-#ifdef CONFIG_X86
-	cpumask_and(res_mask, cpumask, cpu_sibling_mask(cpu))
-#else
-	cpumask_and(res_mask, cpumask, cpu_smt_mask(cpu))
+		if (locality == 1)
+			ranking |= CPUIDLE_DIFF_THREAD;
+		if (!(tmp_rq->siblings_idle(cpu_tmp)))
+			ranking |= CPUIDLE_THREAD_BUSY;
 #endif
-	||
-#endif
+		if (scaling_rq(tmp_rq))
+			ranking |= CPUIDLE_THROTTLED;
 
-#ifdef CONFIG_SCHED_MC
-	/* Cores shares last level cache */
-	cpumask_and(res_mask, cpumask, cpu_coregroup_mask(cpu))
-#endif
-	);
-}
-
-static inline int nonllc_cpu_check(int cpu, cpumask_t *cpumask, cpumask_t *res_mask)
-{
-	return (
-#ifdef CONFIG_SCHED_MC
-#ifdef CONFIG_X86
-	/* Cores within the same physical cpu */
-	cpumask_and(res_mask, cpumask, cpu_core_mask(cpu)) ||
-#endif
-#endif
-
-	/* Cpus/Cores within the local NODE */
-	cpumask_and(res_mask, cpumask, cpu_cpu_mask(cpu))
-	);
-}
-
-/*
- * closest_mask_cpu() doesn't check for the original cpu,
- * caller should ensure cpumask is not empty
- */
-static int closest_mask_cpu(int cpu, cpumask_t *cpumask)
-{
-	cpumask_t tmpmask, non_scaled_mask;
-	cpumask_t *res_mask = &tmpmask;
-
-	if (cpumask_and(&non_scaled_mask, cpumask, &grq.non_scaled_cpumask)) {
-		/*
-		 * non_scaled llc cpus checking
-		 */
-		if (llc_cpu_check(cpu, &non_scaled_mask, res_mask))
-			return cpumask_first(res_mask);
-		/*
-		 * scaling llc cpus checking
-		 */
-		if (llc_cpu_check(cpu, cpumask, res_mask))
-			return cpumask_first(res_mask);
-
-		/*
-		 * non_scaled non_llc cpus checking
-		 */
-		if (nonllc_cpu_check(cpu, &non_scaled_mask, res_mask))
-			return cpumask_first(res_mask);
-		/*
-		 * scaling non_llc cpus checking
-		 */
-		if (nonllc_cpu_check(cpu, cpumask, res_mask))
-			return cpumask_first(res_mask);
-
-		/* All cpus avariable */
-
-		return cpumask_first(cpumask);
-	}
-
-	/*
-	 * scaling llc cpus checking
-	 */
-	if (llc_cpu_check(cpu, cpumask, res_mask))
-		return cpumask_first(res_mask);
-
-	/*
-	 * scaling non_llc cpus checking
-	 */
-	if (nonllc_cpu_check(cpu, cpumask, res_mask))
-		return cpumask_first(res_mask);
-
-	/* All cpus avariable */
-
-	return cpumask_first(cpumask);
-}
-
-static inline int best_mask_cpu(const int cpu, cpumask_t *cpumask)
-{
-	cpumask_t tmpmask, non_scaled_mask;
-	cpumask_t *res_mask = &tmpmask;
-
-	if (cpumask_and(&non_scaled_mask, cpumask, &grq.non_scaled_cpumask)) {
-		/*
-		 * non_scaled llc cpus checking
-		 */
-		if (llc_cpu_check(cpu, &non_scaled_mask, res_mask)) {
-			if (cpumask_test_cpu(cpu, res_mask))
-				return cpu;
-			return cpumask_first(res_mask);
+		if (ranking < best_ranking) {
+			best_cpu = cpu_tmp;
+			best_ranking = ranking;
 		}
-		/*
-		 * scaling llc cpus checking
-		 */
-		if (llc_cpu_check(cpu, cpumask, res_mask)) {
-			if (cpumask_test_cpu(cpu, res_mask))
-				return cpu;
-			return cpumask_first(res_mask);
-		}
-
-		/*
-		 * non_scaled non_llc cpus checking
-		 */
-		if (nonllc_cpu_check(cpu, &non_scaled_mask, res_mask))
-			return cpumask_first(res_mask);
-		/*
-		 * scaling non_llc cpus checking
-		 */
-		if (nonllc_cpu_check(cpu, cpumask, res_mask))
-			return cpumask_first(res_mask);
-
-		/* All cpus avariable */
-
-		return cpumask_first(cpumask);
 	}
-
-	/*
-	 * scaling llc cpus checking
-	 */
-	if (llc_cpu_check(cpu, cpumask, res_mask)) {
-		if (cpumask_test_cpu(cpu, res_mask))
-			return cpu;
-		return cpumask_first(res_mask);
-	}
-
-	/*
-	 * scaling non_llc cpus checking
-	 */
-	if (nonllc_cpu_check(cpu, cpumask, res_mask))
-		return cpumask_first(res_mask);
-
-	/* All cpus avariable */
-
-	return cpumask_first(cpumask);
+out:
+	resched_curr(cpu_rq(best_cpu));
 }
 
 bool cpus_share_cache(int this_cpu, int that_cpu)
@@ -863,38 +782,19 @@ bool cpus_share_cache(int this_cpu, int that_cpu)
 	return (this_rq->cpu_locality[that_cpu] < 3);
 }
 
-static inline bool resched_best_idle(struct task_struct *p)
+static void resched_best_idle(struct task_struct *p)
 {
-        cpumask_t check_cpumask;
+	cpumask_t tmpmask;
 
-        if (cpumask_and(&check_cpumask, &p->cpus_allowed, &grq.cpu_idle_map)) {
-                int best_cpu;
-
-                best_cpu = best_mask_cpu(task_cpu(p), &check_cpumask);
-		resched_curr(cpu_rq(best_cpu));
-		return true;
-	}
-	return false;
+	cpus_and(tmpmask, p->cpus_allowed, grq.cpu_idle_map);
+	resched_best_mask(task_cpu(p), task_rq(p), &tmpmask);
 }
 
-/* Reschedule the best idle CPU that is not this one. */
-static bool
-resched_closest_idle(struct rq *rq, int cpu, struct task_struct *p)
+static inline void resched_suitable_idle(struct task_struct *p)
 {
-        cpumask_t check_cpumask;
-
-	cpumask_copy(&check_cpumask, &p->cpus_allowed);
-	cpumask_clear_cpu(cpu, &check_cpumask);
-        if (cpumask_and(&check_cpumask, &check_cpumask, &grq.cpu_idle_map)) {
-                int best_cpu;
-
-                best_cpu = closest_mask_cpu(task_cpu(p), &check_cpumask);
-		resched_curr(cpu_rq(best_cpu));
-		return true;
-	}
-	return false;
+	if (suitable_idle_cpus(p))
+		resched_best_idle(p);
 }
-
 /*
  * Flags to tell us whether this CPU is running a CPU frequency governor that
  * has slowed its speed or not. No locking required as the very rare wrongly
@@ -903,13 +803,11 @@ resched_closest_idle(struct rq *rq, int cpu, struct task_struct *p)
 void cpu_scaling(int cpu)
 {
 	cpu_rq(cpu)->scaling = true;
-	cpumask_clear_cpu(cpu, &grq.non_scaled_cpumask);
 }
 
 void cpu_nonscaling(int cpu)
 {
 	cpu_rq(cpu)->scaling = false;
-	cpumask_set_cpu(cpu, &grq.non_scaled_cpumask);
 }
 
 static inline bool scaling_rq(struct rq *rq)
@@ -943,14 +841,13 @@ static inline void clear_cpuidle_map(int cpu)
 {
 }
 
-static inline bool resched_best_idle(struct task_struct *p)
-{
-	return false;
-}
-
 static inline bool suitable_idle_cpus(struct task_struct *p)
 {
 	return uprq->curr == uprq->idle;
+}
+
+static inline void resched_suitable_idle(struct task_struct *p)
+{
 }
 
 void cpu_scaling(int __unused)
@@ -977,6 +874,16 @@ static inline int locality_diff(struct task_struct *p, struct rq *rq)
 #endif /* CONFIG_SMP */
 EXPORT_SYMBOL_GPL(cpu_scaling);
 EXPORT_SYMBOL_GPL(cpu_nonscaling);
+
+/*
+ * activate_idle_task - move idle task to the _front_ of runqueue.
+ */
+static inline void activate_idle_task(struct task_struct *p)
+{
+	enqueue_task_head(p);
+	grq.nr_running++;
+	inc_qnr();
+}
 
 static inline int normal_prio(struct task_struct *p)
 {
@@ -1096,6 +1003,19 @@ static inline void clear_sticky(struct task_struct *p)
 static inline bool task_sticky(struct task_struct *p)
 {
 	return p->sticky;
+}
+
+/* Reschedule the best idle CPU that is not this one. */
+static void
+resched_closest_idle(struct rq *rq, int cpu, struct task_struct *p)
+{
+	cpumask_t tmpmask;
+
+	cpus_and(tmpmask, p->cpus_allowed, grq.cpu_idle_map);
+	cpu_clear(cpu, tmpmask);
+	if (cpus_empty(tmpmask))
+		return;
+	resched_best_mask(cpu, rq, &tmpmask);
 }
 
 /*
@@ -1382,8 +1302,10 @@ static void try_preempt(struct task_struct *p, struct rq *this_rq)
 	 */
 	clear_sticky(p);
 
-	if (resched_best_idle(p))
+	if (suitable_idle_cpus(p)) {
+		resched_best_idle(p);
 		return;
+	}
 
 	/* IDLEPRIO tasks never preempt anything but idle */
 	if (p->policy == SCHED_IDLEPRIO)
@@ -3413,7 +3335,7 @@ need_resched:
 		 * Don't reschedule an idle task or deactivated tasks
 		 */
 		if ( prev != idle && !deactivate)
-			resched_best_idle(prev);
+			resched_suitable_idle(prev);
 		/*
 		 * Don't stick tasks when a real time task is going to run as
 		 * they may literally get stuck.
@@ -6372,6 +6294,11 @@ static int __init isolated_cpu_setup(char *str)
 
 __setup("isolcpus=", isolated_cpu_setup);
 
+static const struct cpumask *cpu_cpu_mask(int cpu)
+{
+	return cpumask_of_node(cpu_to_node(cpu));
+}
+
 struct sd_data {
 	struct sched_domain **__percpu sd;
 };
@@ -7226,6 +7153,17 @@ static int cpuset_cpu_inactive(struct notifier_block *nfb, unsigned long action,
 	return NOTIFY_OK;
 }
 
+#if defined(CONFIG_SCHED_SMT) || defined(CONFIG_SCHED_MC)
+/*
+ * Cheaper version of the below functions in case support for SMT and MC is
+ * compiled in but CPUs have no siblings.
+ */
+static bool sole_cpu_idle(int cpu)
+{
+	return rq_idle(cpu_rq(cpu));
+}
+#endif
+
 enum sched_domain_level {
 	SD_LV_NONE = 0,
 	SD_LV_SIBLING,
@@ -7350,6 +7288,7 @@ void __init sched_init(void)
 	grq.noc = 1;
 #ifdef CONFIG_SMP
 	init_defrootdomain();
+	grq.qnr = grq.idle_cpus = 0;
 	cpumask_clear(&grq.cpu_idle_map);
 #ifndef CONFIG_64BIT
 	raw_spin_lock_init(&grq.priodl_lock);
@@ -7384,6 +7323,18 @@ void __init sched_init(void)
 		int j;
 
 		rq = cpu_rq(i);
+#ifdef CONFIG_SCHED_SMT
+		cpumask_clear(&rq->smt_siblings);
+		cpumask_set_cpu(i, &rq->smt_siblings);
+		rq->siblings_idle = sole_cpu_idle;
+		cpumask_set_cpu(i, &rq->smt_siblings);
+#endif
+#ifdef CONFIG_SCHED_MC
+		cpumask_clear(&rq->cache_siblings);
+		cpumask_set_cpu(i, &rq->cache_siblings);
+		rq->cache_idle = sole_cpu_idle;
+		cpumask_set_cpu(i, &rq->cache_siblings);
+#endif
 		rq->cpu_locality = kmalloc(cpu_ids * sizeof(int *), GFP_ATOMIC);
 		for_each_possible_cpu(j) {
 			if (i == j)
