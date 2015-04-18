@@ -26,7 +26,6 @@ static ssize_t charge_level_ac_show(struct kobject *kobj, struct kobj_attribute 
 {
 	// print current value
 	return sprintf(buf, "%d", ac_level);
-
 }
 
 
@@ -59,7 +58,6 @@ static ssize_t charge_level_usb_show(struct kobject *kobj, struct kobj_attribute
 {
 	// print current value
 	return sprintf(buf, "%d", usb_level);
-
 }
 
 
@@ -96,12 +94,10 @@ static ssize_t charge_info_show(struct kobject *kobj, struct kobj_attribute *att
 
 	// stock charge logic
 	if (charge_level == 0)
-		return sprintf(buf, "%s / %d mA (%d) SL", 
-				charge_info_text, charge_info_level_cur, charge_info_level_req);
+		return sprintf(buf, "%d", charge_info_level_cur);
 
 	// non-stock charge logic
-		return sprintf(buf, "%s / %d mA (%d)", 
-			charge_info_text, charge_info_level_cur, charge_info_level_req);
+		return sprintf(buf, "%d", charge_info_level_cur);
 }
 
 
@@ -138,7 +134,7 @@ int charge_level_init(void)
 
         if (!charge_level_kobj)
 	{
-		printk("Boeffla-Kernel: failed to create kernel object for charge level interface.\n");
+		printk("Charger-Control: failed to create kernel object for charge level interface.\n");
                 return -ENOMEM;
         }
 
@@ -147,12 +143,12 @@ int charge_level_init(void)
         if (charge_level_retval)
 	{
 			kobject_put(charge_level_kobj);
-		printk("Boeffla-Kernel: failed to create fs object for charge level interface.\n");
+		printk("Charger-Control: failed to create fs object for charge level interface.\n");
 	        return (charge_level_retval);
 	}
 
 	// print debug info
-	printk("Boeffla-Kernel: charge level interface started.\n");
+	printk("Charger-Control: charge level interface started.\n");
 
         return (charge_level_retval);
 }
@@ -163,7 +159,7 @@ void charge_level_exit(void)
 	kobject_put(charge_level_kobj);
 
 	// print debug info
-	printk("Boeffla-Kernel: charge level interface stopped.\n");
+	printk("Charger-Control: charge level interface stopped.\n");
 }
 
 
