@@ -30,6 +30,7 @@
 unsigned int enabled = 1;
 
 /* How long to wait to disable cores on suspend (in ms) */
+#define SUSPEND_WAIT_TIME_MAX 60000 // 1 minute maximum
 unsigned int suspend_wait_time = 5000;
 
 static struct notifier_block fb_notifier;
@@ -101,6 +102,10 @@ static int fb_notifier_callback(struct notifier_block *nb,
 	int *blank;
 	struct fb_event *evdata = data;
 
+	/* If driver is disabled just leave here */
+	if (!enabled)
+		return 0;
+
 	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
 		blank = evdata->data;
 		if (*blank == FB_BLANK_UNBLANK)
@@ -129,6 +134,10 @@ static ssize_t enable_store(struct kobject *kobj,
 	if (ret < 0)
 		return ret;
 
+	/* Bring everybody online if we are disabling the driver */
+	if (enabled && new_val < 1)
+		msm_zen_dec_resume();
+
 	if (new_val > 0)
 		enabled = 1;
 	else
@@ -152,8 +161,8 @@ static ssize_t suspend_delay_store(struct kobject *kobj,
 	if (ret < 0)
 		return ret;
 
-	if (new_val < 0)
-		suspend_wait_time = 0;
+	/* Restrict value between 0 and SUSPEND_WAIT_TIME_MAX */
+	suspend_wait_time = new_val > SUSPEND_WAIT_TIME_MAX ? SUSPEND_WAIT_TIME_MAX : new_val;
 
 	return size;
 }
@@ -167,7 +176,9 @@ static struct kobj_attribute kobj_suspend_wait =
 		suspend_delay_store);
 
 static struct attribute *zen_decision_attrs[] = {
-	&kobj_enabled.attr, &kobj_suspend_wait.attr, NULL,
+	&kobj_enabled.attr,
+	&kobj_suspend_wait.attr,
+	NULL,
 };
 
 static struct attribute_group zen_decision_option_group = {
@@ -194,8 +205,7 @@ static int zen_decision_probe(struct platform_device *pdev)
 	if (ret) {
 		pr_info("[%s]: sysfs interface failed to initialize\n", ZEN_DECISION);
 		return -EINVAL;
-	} else
-		pr_info("[%s]: sysfs interface initialized.\n", ZEN_DECISION);
+	}
 
 	/* Setup Workqueues */
 	zen_suspend_wq = alloc_workqueue("zen_suspend_wq", WQ_FREEZABLE, 0);
@@ -210,6 +220,9 @@ static int zen_decision_probe(struct platform_device *pdev)
 		pr_err("[%s]: failed to register FB notifier\n", ZEN_DECISION);
 		return -ENOMEM;
 	}
+
+	/* Everything went well, lets say we loaded successfully */
+	pr_info("[%s]: driver initialized successfully \n", ZEN_DECISION);
 
 	return ret;
 }
