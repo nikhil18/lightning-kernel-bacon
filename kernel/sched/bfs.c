@@ -566,12 +566,17 @@ static inline bool task_queued(struct task_struct *p)
 /*
  * Removing from the global runqueue. Enter with grq locked.
  */
-static void dequeue_task(struct task_struct *p)
+static inline void __dequeue_task(struct task_struct *p, int prio)
 {
 	list_del_init(&p->run_list);
-	if (list_empty(grq.queue + p->prio))
-		__clear_bit(p->prio, grq.prio_bitmap);
+	if (list_empty(grq.queue + prio))
+		__clear_bit(prio, grq.prio_bitmap);
 	sched_info_dequeued(p);
+}
+
+static void dequeue_task(struct task_struct *p)
+{
+	__dequeue_task(p, p->prio);
 }
 
 /*
@@ -947,11 +952,15 @@ static inline void check_task_changed(struct rq *rq, struct task_struct *p,
 	 * our priority decreased, or if we are not currently running on
 	 * this runqueue and our priority is higher than the current's
 	 */
-	if (rq->curr == p) {
+	if (task_running(p)) {
 		reset_rq_task(rq, p);
 		/* Resched only if we might now be preempted */
 		if (p->prio > oldprio)
 			resched_curr(rq);
+	} else if (task_queued(p)) {
+		__dequeue_task(p, oldprio);
+		enqueue_task(p, rq);
+		try_preempt(p, rq);
 	}
 }
 
@@ -3915,7 +3924,7 @@ EXPORT_SYMBOL(sleep_on_timeout);
 void rt_mutex_setprio(struct task_struct *p, int prio)
 {
 	unsigned long flags;
-	int queued, oldprio;
+	int oldprio;
 	struct rq *rq;
 
 	BUG_ON(prio < 0 || prio > MAX_PRIO);
@@ -3942,17 +3951,10 @@ void rt_mutex_setprio(struct task_struct *p, int prio)
 
 	trace_sched_pi_setprio(p, prio);
 	oldprio = p->prio;
-	queued = task_queued(p);
-	if (queued)
-		dequeue_task(p);
 	p->prio = prio;
 	update_task_priodl(p);
-	if (task_running(p) && prio > oldprio)
-		resched_task(p);
-	if (queued) {
-		enqueue_task(p);
-		try_preempt(p, rq);
-	}
+
+	check_task_changed(rq, p, oldprio);
 
 out_unlock:
 	task_grq_unlock(&flags);
