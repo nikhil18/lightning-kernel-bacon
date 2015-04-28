@@ -28,7 +28,7 @@
 #define ZEN_DECISION "zen_decision"
 
 /* Enable/Disable driver */
-unsigned int enabled = 1;
+unsigned int enabled = 0;
 
 /* How long to wait to disable cores on suspend (in ms) */
 #define SUSPEND_WAIT_TIME_MAX 60000 // 1 minute maximum
