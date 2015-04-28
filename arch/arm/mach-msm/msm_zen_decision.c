@@ -23,6 +23,7 @@
 #include <linux/notifier.h>
 #include <linux/platform_device.h>
 #include <linux/workqueue.h>
+#include <linux/mutex.h>
 
 #define ZEN_DECISION "zen_decision"
 
@@ -40,6 +41,12 @@ static struct delayed_work suspend_work;
 
 struct kobject *zendecision_kobj;
 
+struct msm_zen_decision_off_t {
+	struct mutex core_mutex;
+	unsigned int screen_off;
+};
+static DEFINE_PER_CPU(struct msm_zen_decision_off_t, msm_zen_decision_off);
+
 /*
  * __msm_zen_dec_suspend
  *
@@ -53,7 +60,10 @@ static void __msm_zen_dec_suspend(struct work_struct *work)
 	for_each_online_cpu(cpu) {
 		/* Don't call cpu_down if cpu0 */
 		if (cpu == 0) continue;
+		mutex_lock(&per_cpu(msm_zen_decision_off, cpu).core_mutex);
 		cpu_down(cpu);
+		per_cpu(msm_zen_decision_off, cpu).screen_off = true;
+		mutex_unlock(&per_cpu(msm_zen_decision_off, cpu).core_mutex);
 	}
 }
 
@@ -91,7 +101,10 @@ static void __ref msm_zen_dec_resume(void)
 	for_each_cpu_not(cpu, cpu_online_mask) {
 		/* Don't call cpu_up if cpu0 */
 		if (cpu == 0) continue;
+		mutex_lock(&per_cpu(msm_zen_decision_off, cpu).core_mutex);
 		cpu_up(cpu);
+		per_cpu(msm_zen_decision_off, cpu).screen_off = false;
+		mutex_unlock(&per_cpu(msm_zen_decision_off, cpu).core_mutex);
 	}
 }
 
@@ -257,6 +270,7 @@ static struct platform_device zen_decision_device = {
 
 static int __init zen_decision_init(void)
 {
+	int cpu;
 	int ret = platform_driver_register(&zen_decision_driver);
 	if (ret)
 		pr_err("[%s]: platform_driver_register failed: %d\n", ZEN_DECISION, ret);
@@ -270,13 +284,23 @@ static int __init zen_decision_init(void)
 	else
 		pr_info("[%s]: platform_device_register succeeded\n", ZEN_DECISION);
 
+	for_each_possible_cpu(cpu) {
+		mutex_init(&(per_cpu(msm_zen_decision_off, cpu).core_mutex));
+		per_cpu(msm_zen_decision_off, cpu).screen_off = false;
+	}
+
 	return ret;
 }
 
 static void __exit zen_decision_exit(void)
 {
+	int cpu;
+
 	platform_driver_unregister(&zen_decision_driver);
 	platform_device_unregister(&zen_decision_device);
+	for_each_possible_cpu(cpu) {
+		mutex_destroy(&(per_cpu(msm_zen_decision_off, cpu).core_mutex));
+	}
 }
 
 late_initcall(zen_decision_init);
