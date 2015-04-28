@@ -704,13 +704,16 @@ static inline void set_cpuidle_map(int cpu)
 static inline void clear_cpuidle_map(int cpu)
 {
 	cpu_clear(cpu, grq.cpu_idle_map);
-	if (cpus_empty(grq.cpu_idle_map))
-		grq.idle_cpus = false;
 }
 
 static inline bool suitable_idle_cpus(struct task_struct *p)
 {
 	return (cpumask_intersects(&p->cpus_allowed, &grq.cpu_idle_map));
+}
+
+static const struct cpumask *cpu_cpu_mask(int cpu)
+{
+	return cpumask_of_node(cpu_to_node(cpu));
 }
 
 static inline bool scaling_rq(struct rq *rq);
@@ -6370,11 +6373,6 @@ static int __init isolated_cpu_setup(char *str)
 }
 
 __setup("isolcpus=", isolated_cpu_setup);
-
-static const struct cpumask *cpu_cpu_mask(int cpu)
-{
-	return cpumask_of_node(cpu_to_node(cpu));
-}
 
 struct sd_data {
 	struct sched_domain **__percpu sd;
