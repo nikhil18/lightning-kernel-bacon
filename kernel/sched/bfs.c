@@ -552,6 +552,26 @@ static inline void update_task_priodl(struct task_struct *p)
 	p->priodl = (((u64) (p->prio))<<56) | ((p->deadline)>>8);
 }
 
+#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
+static inline void grq_priodl_lock()
+{
+	raw_spin_lock(&grq.priodl_lock);
+}
+
+static inline void grq_priodl_unlock()
+{
+	raw_spin_unlock(&grq.priodl_lock);
+}
+#else
+static inline void grq_priodl_lock(void)
+{
+}
+
+static inline void grq_priodl_unlock(void)
+{
+}
+#endif
+
 /*
  * A task that is queued but not running will be on the grq run list.
  * A task that is not running or queued will not be on the grq run list.
@@ -1281,7 +1301,6 @@ static inline bool needs_other_cpu(struct task_struct *p, int cpu)
  */
 static void try_preempt(struct task_struct *p, struct rq *this_rq)
 {
-	struct rq *rq, *highest_prio_rq = NULL;
 	int cpu;
 	u64 highest_priodl;
 	cpumask_t tmp;
@@ -1306,31 +1325,18 @@ static void try_preempt(struct task_struct *p, struct rq *this_rq)
 		return;
 
 	cpu = cpumask_first(&tmp);
-	rq = cpu_rq(cpu);
-	highest_prio_rq = rq;
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-	raw_spin_lock(&grq.priodl_lock);
-#endif
+
+	grq_priodl_lock();
 	highest_priodl = grq.rq_priodls[cpu];
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-	raw_spin_unlock(&grq.priodl_lock);
-#endif
 
 	for (;cpu = cpumask_next(cpu, &tmp), cpu < nr_cpu_ids;) {
 		u64 rq_priodl;
 
-		rq = cpu_rq(cpu);
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-		raw_spin_lock(&grq.priodl_lock);
-#endif
 		rq_priodl = grq.rq_priodls[cpu];
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-		raw_spin_unlock(&grq.priodl_lock);
-#endif
-		if (rq_priodl > highest_priodl ) {
+		if (rq_priodl > highest_priodl )
 			highest_priodl = rq_priodl;
-		}
 	}
+	grq_priodl_unlock();
 
 	if (can_preempt(p, highest_priodl))
 		resched_curr(highest_prio_rq);
@@ -3140,13 +3146,9 @@ static inline void set_rq_task(struct rq *rq, struct task_struct *p)
 	rq->rq_last_ran = p->last_ran = rq->clock_task;
 	rq->rq_policy = p->policy;
 	rq->rq_prio = p->prio;
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-	raw_spin_lock(&grq.priodl_lock);
-#endif
+	grq_priodl_lock();
 	grq.rq_priodls[cpu_of(rq)] = p->priodl;
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-	raw_spin_unlock(&grq.priodl_lock);
-#endif
+	grq_priodl_unlock();
 	rq->rq_running = (p != rq->idle);
 }
 
@@ -3155,13 +3157,9 @@ static inline void reset_rq_task(struct rq *rq, struct task_struct *p)
 	rq->rq_policy = p->policy;
 	rq->rq_prio = p->prio;
 	rq->rq_deadline = p->deadline;
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-	raw_spin_lock(&grq.priodl_lock);
-#endif
+	grq_priodl_lock();
 	grq.rq_priodls[cpu_of(rq)] = p->priodl;
-#if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-	raw_spin_unlock(&grq.priodl_lock);
-#endif
+	grq_priodl_unlock();
 }
 
 /*
