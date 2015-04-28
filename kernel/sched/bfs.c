@@ -553,12 +553,12 @@ static inline void update_task_priodl(struct task_struct *p)
 }
 
 #if defined(CONFIG_SMP) && !defined(CONFIG_64BIT)
-static inline void grq_priodl_lock()
+static inline void grq_priodl_lock(void)
 {
 	raw_spin_lock(&grq.priodl_lock);
 }
 
-static inline void grq_priodl_unlock()
+static inline void grq_priodl_unlock(void)
 {
 	raw_spin_unlock(&grq.priodl_lock);
 }
@@ -1075,26 +1075,6 @@ static inline void deactivate_task(struct task_struct *p)
 
 static void reset_rq_task(struct rq *rq, struct task_struct *p);
 
-static inline void check_task_changed(struct rq *rq, struct task_struct *p,
-				      int oldprio)
-{
-	/*
-	 * Reschedule if we are currently running on this runqueue and
-	 * our priority decreased, or if we are not currently running on
-	 * this runqueue and our priority is higher than the current's
-	 */
-	if (task_running(p)) {
-		reset_rq_task(rq, p);
-		/* Resched only if we might now be preempted */
-		if (p->prio > oldprio)
-			resched_curr(rq);
-	} else if (task_queued(p)) {
-		__dequeue_task(p, oldprio);
-		enqueue_task(p, rq);
-		try_preempt(p, rq);
-	}
-}
-
 #ifdef CONFIG_SMP
 void set_task_cpu(struct task_struct *p, unsigned int cpu)
 {
@@ -1399,7 +1379,7 @@ static inline bool needs_other_cpu(struct task_struct *p, int cpu)
  */
 static void try_preempt(struct task_struct *p, struct rq *this_rq)
 {
-	int cpu;
+	int cpu, target_cpu;
 	u64 highest_priodl;
 	cpumask_t tmp;
 
@@ -1420,7 +1400,7 @@ static void try_preempt(struct task_struct *p, struct rq *this_rq)
 	if (unlikely(!cpumask_and(&tmp, cpu_online_mask, &p->cpus_allowed)))
 		return;
 
-	cpu = cpumask_first(&tmp);
+	target_cpu = cpu = cpumask_first(&tmp);
 
 	grq_priodl_lock();
 	highest_priodl = grq.rq_priodls[cpu];
@@ -1429,13 +1409,15 @@ static void try_preempt(struct task_struct *p, struct rq *this_rq)
 		u64 rq_priodl;
 
 		rq_priodl = grq.rq_priodls[cpu];
-		if (rq_priodl > highest_priodl )
+		if (rq_priodl > highest_priodl ) {
+			target_cpu = cpu;
 			highest_priodl = rq_priodl;
+		}
 	}
 	grq_priodl_unlock();
 
 	if (can_preempt(p, highest_priodl))
-		resched_curr(highest_prio_rq);
+		resched_curr(cpu_rq(target_cpu));
 }
 #else /* CONFIG_SMP */
 static inline bool needs_other_cpu(struct task_struct *p, int cpu)
@@ -3549,6 +3531,26 @@ int default_wake_function(wait_queue_t *curr, unsigned mode, int wake_flags,
 	return try_to_wake_up(curr->private, mode, wake_flags);
 }
 EXPORT_SYMBOL(default_wake_function);
+
+static inline void check_task_changed(struct rq *rq, struct task_struct *p,
+				      int oldprio)
+{
+	/*
+	 * Reschedule if we are currently running on this runqueue and
+	 * our priority decreased, or if we are not currently running on
+	 * this runqueue and our priority is higher than the current's
+	 */
+	if (task_running(p)) {
+		reset_rq_task(rq, p);
+		/* Resched only if we might now be preempted */
+		if (p->prio > oldprio)
+			resched_curr(rq);
+	} else if (task_queued(p)) {
+		__dequeue_task(p, oldprio);
+		enqueue_task(p);
+		try_preempt(p, rq);
+	}
+}
 
 /*
  * The core wakeup function.  Non-exclusive wakeups (nr_exclusive == 0) just
