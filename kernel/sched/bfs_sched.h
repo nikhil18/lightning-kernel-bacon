@@ -19,6 +19,7 @@ struct rq {
 	u64 rq_last_ran;
 	int rq_prio;
 	bool rq_running; /* There is a task running */
+	int soft_affined; /* Running or queued tasks with this set as their rq */
 
 	/* Accurate timekeeping data */
 	u64 timekeep_clock;
