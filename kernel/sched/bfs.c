@@ -661,14 +661,8 @@ static inline int task_timeslice(struct task_struct *p)
 	return (rr_interval * task_prio_ratio(p) / 128);
 }
 
-static void resched_task(struct task_struct *p);
+static void resched_curr(struct rq *rq);
 
-static inline void resched_curr(struct rq *rq)
-{
-	resched_task(rq->curr);
-}
-
-#ifdef CONFIG_SMP
 /*
  * qnr is the "queued but not running" count which is the total number of
  * tasks on the global runqueue list waiting for cpu time but not actually
@@ -689,6 +683,7 @@ static inline int queued_notrunning(void)
 	return grq.qnr;
 }
 
+#ifdef CONFIG_SMP
 /*
  * The cpu_idle_map stores a bitmap of all the CPUs currently idle to
  * allow easy lookup of whether any suitable idle CPUs are available.
@@ -837,19 +832,6 @@ static inline int locality_diff(struct task_struct *p, struct rq *rq)
 	return rq->cpu_locality[task_cpu(p)];
 }
 #else /* CONFIG_SMP */
-static inline void inc_qnr(void)
-{
-}
-
-static inline void dec_qnr(void)
-{
-}
-
-static inline int queued_notrunning(void)
-{
-	return grq.nr_running;
-}
-
 static inline void set_cpuidle_map(int cpu)
 {
 }
@@ -1080,24 +1062,25 @@ static inline void take_task(int cpu, struct task_struct *p)
 #endif
 
 /*
- * resched_task - mark a task 'to be rescheduled now'.
+ * resched_curr - mark rq's current task 'to be rescheduled now'.
  *
  * On UP this means the setting of the need_resched flag, on SMP it
  * might also involve a cross-CPU call to trigger the scheduler on
  * the target CPU.
  */
-void resched_task(struct task_struct *p)
+void resched_curr(struct rq *rq)
 {
+	struct task_struct *curr = rq->curr;
 	int cpu;
 
 	lockdep_assert_held(&grq.lock);
 
-	if (test_tsk_need_resched(p))
+	if (test_tsk_need_resched(curr))
 		return;
 
-	set_tsk_need_resched(p);
+	set_tsk_need_resched(curr);
 
-	cpu = task_cpu(p);
+	cpu = cpu_of(rq);
 	if (cpu == smp_processor_id())
 		return;
 
@@ -4001,7 +3984,7 @@ void set_user_nice(struct task_struct *p, long nice)
 	} else if (task_running(p)) {
 		reset_rq_task(rq, p);
 		if (old_static < new_static)
-			resched_task(p);
+			resched_curr(rq);
 	}
 out_unlock:
 	task_grq_unlock(&flags);
@@ -5383,7 +5366,7 @@ void resched_cpu(int cpu)
 	unsigned long flags;
 
 	grq_lock_irqsave(&flags);
-	resched_task(cpu_curr(cpu));
+	resched_curr(cpu_rq(cpu));
 	grq_unlock_irqrestore(&flags);
 }
 
@@ -5554,7 +5537,7 @@ int set_cpus_allowed_ptr(struct task_struct *p, const struct cpumask *new_mask)
 			set_tsk_need_resched(p);
 			running_wrong = true;
 		} else
-			resched_task(p);
+			resched_curr(rq);
 	} else
 		set_task_cpu(p, cpumask_any_and(cpu_active_mask, new_mask));
 
