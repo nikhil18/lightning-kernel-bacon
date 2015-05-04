@@ -776,23 +776,28 @@ config ZEN_DECISION
 	  MSM/Qcomm devices have multiple userspace applications that handle
 	  CPU hotplugging and frequency operations.
 
-	  ZenDecision is a partial resolution to handling behavior caused by
+	  ZenDecision is a "handler" to account for behavior caused by
 	  disabling some of these services.
 
 	  For example, If MPDecision is disabled and MSM-Thermal_Engine is 
 	  enabled in the userspace. Situations where CPUs go offline but never
-	  come back online occur.
+	  come back online occur. ZenDecision handles the situation of CPUs
+	  never coming online when they are supposed.
   
 	  ZenDecision ensures all CPUs are online when they are supposed to be by:
-	  - Enable all CPUs when screen comes on after zen_wake_delay
+	  - Enable all CPUs when screen comes on after wake_wait_delay
 	  - Ignore all CPU_UP operations when battery level is <= 15% to respect
-	    the decision made by MSMThermal (which disables cores at <= 15% battery)
+	    decisions of MSMThermal.
 
-	  Thresholds and driver enable/disable for above values can be found in:
-	  /sys/kernel/zen_decision
+	  Userspace tunables for ZenDecision (/sys/kernel/zen_decision):
+	  - enabled (0 or 1): Enable or disable the driver.
+	  - wake_wait_time (0-60000): How long to wait before executing CPU_UP work.
+	  - bat_threshold_ignore (0-100, 0=disabled): Don't do any CPU_UP work up to
+	     this battery charge level.
 
-	  ZenDecision is not a direct replacement for any of the MSM userspace
-	  services.
+	  WARNING: ZenDecision is not a direct replacement for any of the MSM userspace
+	  services. It is simply designed to "handle" specific behaviors that are caused
+	  by disabling these services.
 
 	  If unsure, say N.
 
