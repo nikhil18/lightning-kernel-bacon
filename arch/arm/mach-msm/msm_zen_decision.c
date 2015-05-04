@@ -25,7 +25,6 @@
 #include <linux/platform_device.h>
 #include <linux/workqueue.h>
 #include <linux/power_supply.h>
-#include <linux/mutex.h>
 
 #define ZEN_DECISION "zen_decision"
 
@@ -59,10 +58,16 @@ static struct delayed_work wake_work;
 struct kobject *zendecision_kobj;
 
 /* Power supply information */
-// If there is no power_supply device named "battery", battery calculation will be ignored.
-char ps_name[] = "battery";
 static struct power_supply *psy;
 union power_supply_propval current_charge;
+
+/*
+ * Some devices may have a different name power_supply device representing the battery.
+ *
+ * If we can't find the "battery" device, then we ignore all battery work, which means
+ * we do the CPU_UP work regardless of the battery level.
+ */
+const char ps_name[] = "battery";
 
 static int get_power_supply_level(void)
 {
@@ -72,6 +77,12 @@ static int get_power_supply_level(void)
 		return ret;
 	}
 
+	/*
+	 * On at least some MSM devices POWER_SUPPLY_PROP_CAPACITY represents current
+	 * battery level as an integer between 0 and 100.
+	 *
+	 * Unknown if other devices use this property or a different one.
+	 */
 	ret = psy->get_property(psy, POWER_SUPPLY_PROP_CAPACITY, &current_charge);
 	if (ret)
 		return ret;
@@ -124,19 +135,19 @@ static int fb_notifier_callback(struct notifier_block *nb,
 	if (!enabled)
 		return 0;
 
-	/* Clear wake workqueue */
+	/* Clear wake workqueue of any pending threads */
 	flush_workqueue(zen_wake_wq);
 	cancel_delayed_work_sync(&wake_work);
 
 	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
 		blank = evdata->data;
 		if (*blank == FB_BLANK_UNBLANK) {
-			// Make decision based on bat_threshold_ignore
-			if (psy && bat_threshold_ignore)
-				// If current level > ignore threshold, then queue UP work
+			/* Always queue work if PS device doesn't exist or bat_threshold_ignore == 0 */
+			if (psy && bat_threshold_ignore) {
+				/* If current level > ignore threshold, then queue UP work */
 				if (get_power_supply_level() > bat_threshold_ignore)
 					msm_zen_dec_wake();
-			else
+			} else
 				msm_zen_dec_wake();
 		}
 	}
