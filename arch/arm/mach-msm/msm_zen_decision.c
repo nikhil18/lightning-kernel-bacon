@@ -101,8 +101,6 @@ static void __ref __msm_zen_dec_wake(struct work_struct *work)
 	int cpu;
 
 	for_each_cpu_not(cpu, cpu_online_mask) {
-		/* Don't call cpu_up if cpu0 */
-		if (cpu == 0) continue;
 		cpu_up(cpu);
 	}
 }
