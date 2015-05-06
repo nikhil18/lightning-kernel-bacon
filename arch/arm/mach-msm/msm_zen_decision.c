@@ -116,7 +116,7 @@ static int msm_zen_dec_wake(void)
 	int ret;
 
 	INIT_DELAYED_WORK(&wake_work, __msm_zen_dec_wake);
-	ret = queue_delayed_work_on(0, zen_wake_wq, &wake_work,
+	ret = queue_delayed_work(zen_wake_wq, &wake_work,
 			msecs_to_jiffies(wake_wait_time));
 
 	return ret;
