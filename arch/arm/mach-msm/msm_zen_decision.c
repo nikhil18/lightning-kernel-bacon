@@ -111,7 +111,7 @@ static void __ref msm_zd_online_all_cpus(struct work_struct *work)
  * Call msm_zd_online_all_cpus as a delayed worker thread on wake_wq.
  * Delayed by wake_wait_time.
  */
-static void msm_zen_dec_wake(void)
+static void msm_zd_queue_online_work(void)
 {
 	queue_delayed_work(zen_wake_wq, &wake_work,
 			msecs_to_jiffies(wake_wait_time));
