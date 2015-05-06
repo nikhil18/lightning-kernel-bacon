@@ -269,7 +269,7 @@ static int zen_decision_probe(struct platform_device *pdev)
 	}
 
 	/* Setup Workqueues */
-	zen_wake_wq = alloc_workqueue("zen_wake_wq", WQ_FREEZABLE, 0);
+	zen_wake_wq = alloc_workqueue("zen_wake_wq", WQ_FREEZABLE | WQ_UNBOUND, 1);
 	if (!zen_wake_wq) {
 		pr_err("[%s]: Failed to allocate suspend workqueue\n", ZEN_DECISION);
 		return -ENOMEM;
