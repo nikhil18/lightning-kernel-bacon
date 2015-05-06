@@ -91,12 +91,12 @@ static int get_power_supply_level(void)
 }
 
 /*
- * __msm_zen_dec_wake
+ * msm_zd_online_cpus
  *
  * Core wake work function.
  * Brings all CPUs online. Called from worker thread.
  */
-static void __ref __msm_zen_dec_wake(struct work_struct *work)
+static void __ref msm_zd_online_all_cpus(struct work_struct *work)
 {
 	int cpu;
 
@@ -106,20 +106,15 @@ static void __ref __msm_zen_dec_wake(struct work_struct *work)
 }
 
 /*
- * msm_zen_dec_wake
+ * msm_zd_queue_online_work
  *
- * Call __msm_zen_dec_wake as a delayed worker thread on wake_wq.
+ * Call msm_zd_online_all_cpus as a delayed worker thread on wake_wq.
  * Delayed by wake_wait_time.
  */
-static int msm_zen_dec_wake(void)
+static void msm_zen_dec_wake(void)
 {
-	int ret;
-
-	INIT_DELAYED_WORK(&wake_work, __msm_zen_dec_wake);
-	ret = queue_delayed_work(zen_wake_wq, &wake_work,
+	queue_delayed_work(zen_wake_wq, &wake_work,
 			msecs_to_jiffies(wake_wait_time));
-
-	return ret;
 }
 
 /** Use FB notifiers to detect screen off/on and do the work **/
@@ -144,9 +139,9 @@ static int fb_notifier_callback(struct notifier_block *nb,
 			if (psy && bat_threshold_ignore) {
 				/* If current level > ignore threshold, then queue UP work */
 				if (get_power_supply_level() > bat_threshold_ignore)
-					msm_zen_dec_wake();
+					msm_zd_queue_online_work();
 			} else
-				msm_zen_dec_wake();
+				msm_zd_queue_online_work();
 		}
 	}
 
@@ -235,20 +230,20 @@ static struct kobj_attribute kobj_bat_threshold_ignore =
 	__ATTR(bat_threshold_ignore, 0644, bat_threshold_ignore_show,
 		bat_threshold_ignore_store);
 
-static struct attribute *zen_decision_attrs[] = {
+static struct attribute *zd_attrs[] = {
 	&kobj_enabled.attr,
 	&kobj_wake_wait.attr,
 	&kobj_bat_threshold_ignore.attr,
 	NULL,
 };
 
-static struct attribute_group zen_decision_option_group = {
-	.attrs = zen_decision_attrs,
+static struct attribute_group zd_option_group = {
+	.attrs = zd_attrs,
 };
 
 /* Sysfs End */
 
-static int zen_decision_probe(struct platform_device *pdev)
+static int zd_probe(struct platform_device *pdev)
 {
 	int ret;
 
@@ -262,7 +257,7 @@ static int zen_decision_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
-	ret = sysfs_create_group(zendecision_kobj, &zen_decision_option_group);
+	ret = sysfs_create_group(zendecision_kobj, &zd_option_group);
 	if (ret) {
 		pr_info("[%s]: sysfs interface failed to initialize\n", ZEN_DECISION);
 		return -EINVAL;
@@ -274,6 +269,7 @@ static int zen_decision_probe(struct platform_device *pdev)
 		pr_err("[%s]: Failed to allocate suspend workqueue\n", ZEN_DECISION);
 		return -ENOMEM;
 	}
+	INIT_DELAYED_WORK(&wake_work, msm_zd_online_all_cpus);
 
 	/* Setup FB Notifier */
 	fb_notifier.notifier_call = fb_notifier_callback;
@@ -296,7 +292,7 @@ static int zen_decision_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int zen_decision_remove(struct platform_device *pdev)
+static int zd_remove(struct platform_device *pdev)
 {
 	kobject_put(zendecision_kobj);
 
@@ -310,30 +306,30 @@ static int zen_decision_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static struct platform_driver zen_decision_driver = {
-	.probe = zen_decision_probe,
-	.remove = zen_decision_remove,
+static struct platform_driver zd_driver = {
+	.probe = zd_probe,
+	.remove = zd_remove,
 	.driver = {
 		.name = ZEN_DECISION,
 		.owner = THIS_MODULE,
 	}
 };
 
-static struct platform_device zen_decision_device = {
+static struct platform_device zd_device = {
 	.name = ZEN_DECISION,
 	.id = -1
 };
 
-static int __init zen_decision_init(void)
+static int __init zd_init(void)
 {
-	int ret = platform_driver_register(&zen_decision_driver);
+	int ret = platform_driver_register(&zd_driver);
 	if (ret)
 		pr_err("[%s]: platform_driver_register failed: %d\n", ZEN_DECISION, ret);
 	else
 		pr_info("[%s]: platform_driver_register succeeded\n", ZEN_DECISION);
 
 
-	ret = platform_device_register(&zen_decision_device);
+	ret = platform_device_register(&zd_device);
 	if (ret)
 		pr_err("[%s]: platform_device_register failed: %d\n", ZEN_DECISION, ret);
 	else
@@ -342,14 +338,14 @@ static int __init zen_decision_init(void)
 	return ret;
 }
 
-static void __exit zen_decision_exit(void)
+static void __exit zd_exit(void)
 {
-	platform_driver_unregister(&zen_decision_driver);
-	platform_device_unregister(&zen_decision_device);
+	platform_driver_unregister(&zd_driver);
+	platform_device_unregister(&zd_device);
 }
 
-late_initcall(zen_decision_init);
-module_exit(zen_decision_exit);
+late_initcall(zd_init);
+module_exit(zd_exit);
 
 MODULE_VERSION("2.0");
 MODULE_DESCRIPTION("Zen Decision - Kernel MSM Userspace Handler");
