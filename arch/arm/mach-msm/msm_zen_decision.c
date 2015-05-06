@@ -212,8 +212,8 @@ static ssize_t bat_threshold_ignore_store(struct kobject *kobj,
 	/* Restrict between 0 and 100 */
 	if (new_val > 100)
 		bat_threshold_ignore = 100;
-	else if (new_val < 0)
-		bat_threshold_ignore = 0;
+	else
+		bat_threshold_ignore = new_val;
 
 	return size;
 }
