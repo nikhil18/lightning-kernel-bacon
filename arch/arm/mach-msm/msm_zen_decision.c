@@ -247,9 +247,6 @@ static int zd_probe(struct platform_device *pdev)
 {
 	int ret;
 
-	/* Set default settings */
-	enabled = 1;
-
 	/* Setup sysfs */
 	zendecision_kobj = kobject_create_and_add("zen_decision", kernel_kobj);
 	if (zendecision_kobj == NULL) {
