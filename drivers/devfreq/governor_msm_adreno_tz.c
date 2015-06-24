@@ -20,7 +20,11 @@
 #include <linux/ftrace.h>
 #include <linux/msm_adreno_devfreq.h>
 #include <soc/qcom/scm.h>
+#include <linux/state_notifier.h>
 #include "governor.h"
+#ifdef CONFIG_ADRENO_IDLER
+#include "adreno_idler.h"
+#endif
 
 static DEFINE_SPINLOCK(tz_lock);
 
@@ -33,7 +37,6 @@ static DEFINE_SPINLOCK(tz_lock);
  * MIN_BUSY is 1 msec for the sample to be sent
  */
 #define MIN_BUSY		1000
-
 /*
  * Use BUSY_BIN to check for fully busy rendering
  * intervals that may need early intervention when
@@ -59,6 +62,9 @@ static void do_partner_stop_event(struct work_struct *work);
 static void do_partner_suspend_event(struct work_struct *work);
 static void do_partner_resume_event(struct work_struct *work);
 
+/* Boolean to detect if pm has entered suspend mode */
+static bool suspended;
+
 /* Trap into the TrustZone, and call funcs there. */
 static int __secure_tz_entry2(u32 cmd, u32 val1, u32 val2)
 {
@@ -82,10 +88,18 @@ static int __secure_tz_entry3(u32 cmd, u32 val1, u32 val2, u32 val3)
 	return ret;
 }
 
-#ifdef CONFIG_ADRENO_IDLER
-extern int adreno_idler(struct devfreq_dev_status stats, struct devfreq *devfreq,
-		 unsigned long *freq);
-#endif
+static void _update_cutoff(struct devfreq_msm_adreno_tz_data *priv,
+				unsigned int norm_max)
+{
+	int i;
+
+	priv->bus.max = norm_max;
+	for (i = 0; i < priv->bus.num; i++) {
+		priv->bus.up[i] = priv->bus.p_up[i] * norm_max / 100;
+		priv->bus.down[i] = priv->bus.p_down[i] * norm_max / 100;
+	}
+}
+
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 				u32 *flag)
 {
@@ -114,13 +128,14 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	 * Force to use & record as min freq when system has
 	 * entered pm-suspend or screen-off state.
 	 */
-	if (suspended || power_suspended) {
+	if (suspended || state_suspended) {
 		*freq = devfreq->profile->freq_table[devfreq->profile->max_state - 1];
 		return 0;
 	}
 
 #ifdef CONFIG_ADRENO_IDLER
-	if (adreno_idler(stats, devfreq, freq)) {
+	if (adreno_idler_active &&
+			adreno_idler(stats, devfreq, freq)) {
 		/* adreno_idler has asked to bail out now */
 		return 0;
 	}
@@ -295,6 +310,8 @@ static int tz_resume(struct devfreq *devfreq)
 	struct devfreq_dev_profile *profile = devfreq->profile;
 	unsigned long freq;
 
+	suspended = false;
+
 	freq = profile->initial_freq;
 
 	return profile->target(devfreq->dev.parent, &freq, 0);
@@ -303,6 +320,8 @@ static int tz_resume(struct devfreq *devfreq)
 static int tz_suspend(struct devfreq *devfreq)
 {
 	struct devfreq_msm_adreno_tz_data *priv = devfreq->data;
+
+	suspended = true;
 
 	__secure_tz_entry2(TZ_RESET_ID, 0, 0);
 
