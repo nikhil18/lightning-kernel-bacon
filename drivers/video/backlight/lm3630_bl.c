@@ -253,11 +253,11 @@ EXPORT_SYMBOL(lm3630_cabc_changed);
 #ifdef CONFIG_STATE_NOTIFIER
 	// if display is switched off
 	if (!use_fb_notifier && bl_level == 0)
-		state_notifier_call_chain(STATE_NOTIFIER_SUSPEND, NULL);
+		state_suspend();
 
 	// if display is switched on
 	if (!use_fb_notifier && bl_level != 0 && pre_brightness == 0)
-		state_notifier_call_chain(STATE_NOTIFIER_ACTIVE, NULL);
+		state_resume();
 #endif /*CONFIG_STATE_NOTIFIER*/
 	
 	if(!pchip){
