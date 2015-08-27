@@ -55,13 +55,16 @@
 #define FILTER_STR 0x50
 #endif /*CONFIG_MACH_OPPO*/
 
-
 #ifdef CONFIG_MACH_OPPO
 /* Xiaori.Yuan@Mobile Phone Software Dept.Driver, 2014/03/10  Add for flicker in low backlight */
 static bool pwm_flag = true;
 int cabc = 0;
 static int pre_brightness=0;
 #endif /*CONFIG_MACH_OPPO*/
+
+#ifdef CONFIG_STATE_NOTIFIER
+#include <linux/state_notifier.h>
+#endif /*CONFIG_STATE_NOTIFIER*/
 
 static struct lm3630_chip_data *lm3630_pchip;
 
@@ -246,6 +249,16 @@ EXPORT_SYMBOL(lm3630_cabc_changed);
 	int ret;
 	struct lm3630_chip_data *pchip = lm3630_pchip;
 	pr_debug("%s: bl=%d\n", __func__,bl_level);
+
+#ifdef CONFIG_STATE_NOTIFIER
+	// if display is switched off
+	if (!use_fb_notifier && bl_level == 0)
+		state_notifier_call_chain(STATE_NOTIFIER_SUSPEND, NULL);
+
+	// if display is switched on
+	if (!use_fb_notifier && bl_level != 0 && pre_brightness == 0)
+		state_notifier_call_chain(STATE_NOTIFIER_ACTIVE, NULL);
+#endif /*CONFIG_STATE_NOTIFIER*/
 	
 	if(!pchip){
 		dev_err(pchip->dev, "lm3630_bank_a_update_status pchip is null\n");
