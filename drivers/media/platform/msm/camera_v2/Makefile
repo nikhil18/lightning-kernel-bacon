@@ -1,3 +1,5 @@
+EXTRA_CFLAGS += -Wno-bool-compare
+
 ccflags-y += -Idrivers/media/platform/msm/camera_v2
 ifeq ($(CONFIG_CAF_CAMERA_DRIVER),y)
 ccflags-y += -Idrivers/media/platform/msm/camera_v2/sensor_caf

@@ -221,7 +221,7 @@ static int dm9601_mdio_read(struct net_device *netdev, int phy_id, int loc)
 {
 	struct usbnet *dev = netdev_priv(netdev);
 
-	__le16 res;
+	__le16 res = 0;
 
 	if (phy_id) {
 		netdev_dbg(dev->net, "Only internal phy supported\n");
