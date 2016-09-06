@@ -372,6 +372,7 @@ KBUILD_CFLAGS   := -Wall -DNDEBUG -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
+                   -Wno-array-bounds -Wno-duplicate-decl-specifier -Wno-switch-unreachable \
                    -Wno-unused-variable \
                    -Wno-discarded-qualifiers \
                    -Wno-shift-overflow -Wno-tautological-compare \
