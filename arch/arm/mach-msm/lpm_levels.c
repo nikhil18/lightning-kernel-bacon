@@ -362,7 +362,7 @@ static void lpm_system_prepare(struct lpm_system_state *system_state,
 	struct lpm_system_level *lvl;
 	uint32_t sclk;
 	int ret;
-	int64_t us = (~0ULL);
+	uint64_t us = (~0ULL);
 	int dbg_mask;
 	struct cpumask nextcpu;
 
@@ -400,7 +400,7 @@ static void lpm_system_prepare(struct lpm_system_state *system_state,
 	}
 
 	do_div(us, USEC_PER_SEC/SCLK_HZ);
-	sclk = (uint32_t)us;
+	sclk = us;
 	msm_mpm_enter_sleep(sclk, from_idle, &nextcpu);
 	if (from_idle)
 		time = sched_clock();
