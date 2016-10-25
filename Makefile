@@ -242,8 +242,8 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 
 HOSTCC       = $(CCACHE) gcc
 HOSTCXX      = $(CCACHE) g++
-HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 -fomit-frame-pointer -fgcse-las -std=gnu89
-HOSTCXXFLAGS = -O3 -fgcse-las
+HOSTCFLAGS   = -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 -fno-tree-vectorize -fomit-frame-pointer -fgcse-las -std=gnu89
+HOSTCXXFLAGS = -O3 -fno-tree-vectorize -fgcse-las
 
 # Decide whether to build built-in, modular, or both.
 # Normally, just do built-in.
@@ -344,7 +344,7 @@ CHECK		= sparse
 CHECKFLAGS     := -D__linux__ -Dlinux -D__STDC__ -Dunix -D__unix__ \
 		  -Wbitwise -Wno-return-void $(CF)
 
-KERNELFLAGS	= -munaligned-access -fforce-addr -fsingle-precision-constant -mcpu=cortex-a15 -mtune=cortex-a15 -marm -mfpu=neon-vfpv4 -fgcse-las
+KERNELFLAGS	= -munaligned-access -fforce-addr -fsingle-precision-constant -mcpu=cortex-a15 -mtune=cortex-a15 -marm -mfpu=neon-vfpv4 -fno-tree-vectorize -fgcse-las
 MODFLAGS	= -DMODULE $(KERNELFLAGS)
 CFLAGS_MODULE   = $(MODFLAGS)
 AFLAGS_MODULE   = $(MODFLAGS)
