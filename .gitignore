@@ -109,3 +109,5 @@ x509.genkey
 *la.br\).*
 *asıl\).*
 *dursun\).*
+
+arch/arm/crypto/sha256-core.S
