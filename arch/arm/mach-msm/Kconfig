@@ -3105,6 +3105,19 @@ config BRICKED_HOTPLUG
 	  This enables kernel based multi core control.
 	  (up/down hotplug based on load)
 
+config BLU_PLUG
+	bool "Dynamic hotplug driver"
+ 	depends on HOTPLUG_CPU
+ 	help
+	  The Dynamic hotplug driver automatically online/offline CPUs proportional to system load.
+
+config AUTOSMP
+	bool "Multi-core automatic hotplug support"
+	depends on SMP && HOTPLUG_CPU
+	help
+	  Automatically hotplugs the multiple cpu cores on and off
+	  based on cpu load and suspend state
+
 endif
 
 config KERNEL_TEXT_MPU_PROT

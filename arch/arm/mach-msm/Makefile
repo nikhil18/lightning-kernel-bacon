@@ -429,4 +429,8 @@ obj-$(CONFIG_MSM_HOTPLUG) += msm_hotplug.o
 obj-$(CONFIG_INTELLI_HOTPLUG) += intelli_hotplug.o
 obj-$(CONFIG_BRICKED_HOTPLUG) += bricked_hotplug.o
 obj-$(CONFIG_CHARGE_LEVEL) += charge_level.o
+<<<<<<< HEAD
 obj-$(CONFIG_OEM_PROJECT_INFO) += project_info.o
+=======
+obj-$(CONFIG_AUTOSMP) += autosmp.o
+>>>>>>> 940a589... add autosmp hotplug
