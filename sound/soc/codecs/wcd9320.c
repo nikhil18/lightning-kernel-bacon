@@ -485,6 +485,12 @@ struct taiko_priv {
 	struct fw_info *fw_data;
 };
 
+/* OPPO 2013-11-12 xuzhaoan Add begin for American Headset Detect */
+#ifdef CONFIG_MACH_ONYX
+    struct taiko_priv *priv_headset_type;
+#endif
+/* OPPO 2013-11-12 xuzhaoan Add end */
+
 static const u32 comp_shift[] = {
 	4, /* Compander 0's clock source is on interpolator 7 */
 	0,
@@ -564,7 +570,34 @@ static unsigned short tx_digital_gain_reg[] = {
 	TAIKO_A_CDC_TX9_VOL_CTL_GAIN,
 	TAIKO_A_CDC_TX10_VOL_CTL_GAIN,
 };
+//liuyan 2013-3-13 add for headset detect
+#ifdef CONFIG_MACH_ONYX
+enum 
+{
+	NO_DEVICE	= 0,
+	HS_WITH_MIC	= 1,
+	HS_WITHOUT_MIC = 2,
+};
+static ssize_t wcd9xxx_print_name(struct switch_dev *sdev, char *buf)
+{
+	switch (switch_get_state(sdev)) 
+	{
+		case NO_DEVICE:
+			return sprintf(buf, "No Device\n");
+		case HS_WITH_MIC:
+            if(priv_headset_type->mbhc.mbhc_cfg->headset_type == 1) {
+		        return sprintf(buf, "American Headset\n");
+            } else {
+                return sprintf(buf, "Headset\n");
+            }
 
+		case HS_WITHOUT_MIC:
+			return sprintf(buf, "Handset\n");
+
+	}
+	return -EINVAL;
+}
+#endif
 static int taiko_get_sample_rate(struct snd_soc_codec *codec, int path)
 {
 	return snd_soc_read(codec,
@@ -7824,6 +7857,15 @@ static int taiko_codec_probe(struct snd_soc_codec *codec)
 		pr_err("%s: mbhc init failed %d\n", __func__, ret);
 		goto err_hwdep;
 	}
+#ifdef CONFIG_MACH_ONYX
+	taiko->mbhc.wcd9xxx_sdev.name= "h2w";
+	taiko->mbhc.wcd9xxx_sdev.print_name = wcd9xxx_print_name;
+	ret = switch_dev_register(&taiko->mbhc.wcd9xxx_sdev);
+	if (ret)
+	{
+		goto err_switch_dev_register;
+	}
+#endif
 	taiko->codec = codec;
 	for (i = 0; i < COMPANDER_MAX; i++) {
 		taiko->comp_enabled[i] = 0;
@@ -7941,6 +7983,11 @@ static int taiko_codec_probe(struct snd_soc_codec *codec)
 	snd_soc_dapm_sync(dapm);
 
 	codec->ignore_pmdown_time = 1;
+/* OPPO 2013-11-12 xuzhaoan Add begin for America Headset Detect */
+#ifdef CONFIG_MACH_ONYX
+ 	priv_headset_type = taiko;
+#endif
+/* OPPO 2013-11-12 xuzhaoan Add end */
 
 	/*
 	 * Get the default values during probe
@@ -7960,6 +8007,12 @@ err_irq:
 err_hwdep:
 	kfree(taiko->fw_data);
 err_nomem_slimch:
+	//luiyan 2013-3-13 add for headset detect
+	#ifdef CONFIG_MACH_ONYX
+	switch_dev_unregister(&taiko->mbhc.wcd9xxx_sdev);
+err_switch_dev_register:
+	#endif
+	//liuyan add end
 	kfree(taiko);
 	return ret;
 }
