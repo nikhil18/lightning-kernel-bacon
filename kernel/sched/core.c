@@ -90,7 +90,7 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
 
-#include <soc/qcom/watchdog.h>
+#include <linux/watchdog.h>
 
 #define DLOG_SIZE 15000
 #define MAX_CTXSW_LATENCY 1000000000
