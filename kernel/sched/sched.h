@@ -752,19 +752,9 @@ unsigned int max_task_load(void);
 extern void sched_account_irqtime(int cpu, struct task_struct *curr,
 				 u64 delta, u64 wallclock);
 
-/*
- * 'load' is in reference to "best cpu" at its best frequency.
- * Scale that in reference to a given cpu, accounting for how bad it is
- * in reference to "best cpu".
- */
-static inline u64 scale_load_to_cpu(u64 task_load, int cpu)
+static inline int capacity(struct rq *rq)
 {
-	struct rq *rq = cpu_rq(cpu);
-
-	task_load *= (u64)rq->load_scale_factor;
-	task_load /= 1024;
-
-	return task_load;
+	return rq->capacity;
 }
 
 static inline void
