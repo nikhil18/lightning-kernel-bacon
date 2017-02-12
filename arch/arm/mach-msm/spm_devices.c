@@ -66,11 +66,6 @@ static void msm_spm_smp_set_vdd(void *data)
 	info->err = msm_spm_drv_set_vdd(&dev->reg_data, info->vlevel);
 }
 
-void msm_spm_dump_regs(unsigned int cpu)
-{
-	dump_regs(&per_cpu(msm_cpu_spm_device, cpu).reg_data, cpu);
-}
-
 /**
  * msm_spm_probe_done(): Verify and return the status of the cpu(s) and l2
  * probe.
