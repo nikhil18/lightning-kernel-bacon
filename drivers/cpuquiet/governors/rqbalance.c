@@ -97,7 +97,7 @@ static bool soc_is_hmp;
 static unsigned int available_clusters = 0;
 
 /* configurable parameters */
-static unsigned int  balance_level = 40;
+static unsigned int  balance_level = 60;
 static unsigned int  idle_bottom_freq[MAX_CLUSTERS];
 static unsigned int  idle_top_freq[MAX_CLUSTERS];
 static unsigned int  num_of_cores[MAX_CLUSTERS];
@@ -251,7 +251,7 @@ static inline int get_offline_core(int cluster)
  */
 static unsigned int nr_run_thresholds[] = {
 /*      1,	2,	3,	4 (target on-line num of cpus) */
-	100,	250,	330,	4294967295,
+	150,	400,	500,	520,
 
 /*	5,	6,	7,	8 (HMP target on-line num of CPUs) */
 	550,	640,	750,	UINT_MAX
@@ -259,7 +259,7 @@ static unsigned int nr_run_thresholds[] = {
 
 static unsigned int nr_down_run_thresholds[] = {
 /*	1,	2,	3,	4 (target off-line num of cpus) */
-	0,	120,	220,	330,
+	0,	80,	290,	360,
 
 /*	5,	6,	7,	8 (HMP target off-line num of CPUs) */
 	440,	500,	550,	680
