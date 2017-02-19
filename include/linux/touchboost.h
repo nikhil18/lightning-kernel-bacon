@@ -10,6 +10,6 @@
 #ifndef _LINUX_TOUCHBOOST_H
 #define _LINUX_TOUCHBOOST_H
 
-u64 get_input_time(void);
+extern u64 last_input_time;
 
 #endif

@@ -70,7 +70,7 @@ static void cs_check_cpu(int cpu, unsigned int load)
 		return;
 
 	now = ktime_to_us(ktime_get());
-	boosted = now < (get_input_time() + cs_tuners->input_boost_duration);
+	boosted = now < (last_input_time + cs_tuners->input_boost_duration);
 
 	/* Check for frequency increase */
 	if (load > DEF_FREQUENCY_TWOSTEP_THRESHOLD) {

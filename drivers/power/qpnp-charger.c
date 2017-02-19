@@ -8628,7 +8628,6 @@ static void battery_fcc_init_procfs(void)//sjc20150105
 }
 /* yangfangbiao@oneplus.cn, 2015/01/06  Modify  end for  sync with KK charge standard  */
 #endif
-#endif
 /* OPPO 2013-06-08 wangjc Add end */
 
 

@@ -31,12 +31,7 @@ struct touchboost_inputopen {
  * core is allowed to ramp the cpu down after an input event. That logic is done
  * by you, this var only outputs the last time in us an event was captured
  */
-static u64 last_input_time = 0;
-
-inline u64 get_input_time(void)
-{
-	return last_input_time;
-}
+u64 last_input_time = 0;
 
 static void boost_input_event(struct input_handle *handle,
                 unsigned int type, unsigned int code, int value)
