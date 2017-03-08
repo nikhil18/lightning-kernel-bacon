@@ -39,21 +39,9 @@
  * pair to apply value individually.
  */
 
-#if defined(CONFIG_ARCH_MSM8974)
 #define DEFAULT_SUSP_MAX_FREQUENCY	1728000
-#elif defined(CONFIG_ARCH_APQ8084)
-#define DEFAULT_SUSP_MAX_FREQUENCY	1728000
-#endif
-#if defined(CONFIG_ARCH_MSM8974)
 #define DEFAULT_RESUME_MAX_FREQUENCY	2457600
-#elif defined(CONFIG_ARCH_APQ8084)
-#define DEFAULT_RESUME_MAX_FREQUENCY	2649600
-#endif
-#if defined(CONFIG_ARCH_MSM8974)
-#define DEFAULT_MIN_FREQUENCY		300000
-#elif defined(CONFIG_ARCH_APQ8084)
-#define DEFAULT_MIN_FREQUENCY		300000
-#endif
+#define DEFAULT_MIN_FREQUENCY		268800
 
 static struct notifier_block notif;
 static unsigned int freq_control = FREQ_CONTROL;
@@ -636,7 +624,7 @@ static int msm_limiter_init(void)
 
 	/* One-time init of required values. */
 	for_each_possible_cpu(cpu) {		
-#if defined(CONFIG_ARCH_MSM8916) || defined(CONFIG_ARCH_APQ8084)
+#if defined(CONFIG_ARCH_MSM8916) || defined(CONFIG_ARCH_MSM8974)
 		per_cpu(limit, cpu).suspend_max_freq = DEFAULT_SUSP_MAX_FREQUENCY;
 		per_cpu(limit, cpu).resume_max_freq = DEFAULT_RESUME_MAX_FREQUENCY;
 		per_cpu(limit, cpu).suspend_min_freq = DEFAULT_MIN_FREQUENCY;
