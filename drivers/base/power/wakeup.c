@@ -20,12 +20,22 @@
 
 static bool enable_si_ws = true;
 module_param(enable_si_ws, bool, 0644);
+static bool enable_qcom_rx_wakelock_ws = true;
+module_param(enable_qcom_rx_wakelock_ws, bool, 0644);
 static bool enable_msm_hsic_ws = true;
 module_param(enable_msm_hsic_ws, bool, 0644);
+static bool enable_ipa_ws = true;
+module_param(enable_ipa_ws, bool, 0644);
+static bool enable_wlan_extscan_wl_ws = true;
+module_param(enable_wlan_extscan_wl_ws, bool, 0644);
 static bool enable_wlan_rx_wake_ws = true;
 module_param(enable_wlan_rx_wake_ws, bool, 0644);
 static bool enable_wlan_ctrl_wake_ws = true;
 module_param(enable_wlan_ctrl_wake_ws, bool, 0644);
+static bool enable_wlan_wow_wl_ws = true;
+module_param(enable_wlan_wow_wl_ws, bool, 0644);
+static bool enable_wlan_ws = true;
+module_param(enable_wlan_ws, bool, 0644);
 static bool enable_wlan_wake_ws = true;
 module_param(enable_wlan_wake_ws, bool, 0644);
 static bool enable_bluedroid_timer_ws = true;
@@ -34,6 +44,8 @@ static bool enable_timerfd_ws = true;
 module_param(enable_timerfd_ws, bool, 0644);
 static bool enable_netlink_ws = true;
 module_param(enable_netlink_ws, bool, 0644);
+static bool enable_netmgr_wl_ws = true;
+module_param(enable_netmgr_wl_ws, bool, 0644);
 
 #include "power.h"
 
@@ -475,16 +487,26 @@ static bool wakeup_source_blocker(struct wakeup_source *ws)
 		if ((!enable_si_ws && !strncmp(ws->name, "sensor_ind", wslen)) ||
 			(!enable_msm_hsic_ws &&
 				!strncmp(ws->name, "msm_hsic_host", wslen)) ||
+			(!enable_wlan_extscan_wl_ws &&
+				!strncmp(ws->name, "wlan_extscan_wl", wslen)) ||
+			(!enable_qcom_rx_wakelock_ws &&
+				!strncmp(ws->name, "qcom_rx_wakelock", wslen)) ||
 			(!enable_wlan_rx_wake_ws &&
 				!strncmp(ws->name, "wlan_rx_wake", wslen)) ||
 			(!enable_wlan_ctrl_wake_ws &&
 				!strncmp(ws->name, "wlan_ctrl_wake", wslen)) ||
+			(!enable_wlan_wow_wl_ws &&
+				!strncmp(ws->name, "wlan_wow_wl", wslen)) ||
 			(!enable_wlan_wake_ws &&
 				!strncmp(ws->name, "wlan_wake", wslen)) ||
+			(!enable_wlan_ws &&
+				!strncmp(ws->name, "wlan", wslen)) || 
 			(!enable_bluedroid_timer_ws &&
 				!strncmp(ws->name, "bluedroid_timer", wslen)) ||
 			(!enable_timerfd_ws &&
 				!strncmp(ws->name, "[timerfd]", wslen)) ||
+			(!enable_netmgr_wl_ws &&
+				!strncmp(ws->name, "netmgr_wl", wslen)) ||
 			(!enable_netlink_ws &&
 				!strncmp(ws->name, "NETLINK", wslen))) {
 			if (ws->active) {
