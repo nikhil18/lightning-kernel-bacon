@@ -6819,7 +6819,7 @@ static int set_prop_batt_health(struct qpnp_chg_chip *chip, int batt_health)
 
 #define MAX_COUNT	50
 /* jingchun.wang@Onlinerd.Driver, 2014/01/02  Add for set soft aicl voltage to 4.4v */
-int SOFT_AICL_VOL = 4465; // is OP2 value. 4555 in ColorOS, 4500 in LinOS 
+int SOFT_AICL_VOL = 4390; // is OP2 value. 4555 in ColorOS, 4500 in LinOS 
 #endif /*CONFIG_VENDOR_EDIT*/
 /* jingchun.wang@Onlinerd.Driver, 2013/12/27  Add for auto adapt current by software. */
 static int soft_aicl(struct qpnp_chg_chip *chip)
