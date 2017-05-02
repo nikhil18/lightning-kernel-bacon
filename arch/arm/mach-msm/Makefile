@@ -139,5 +139,4 @@ obj-$(CONFIG_MSM_CPR_REGULATOR) += cpr-regulator.o
 obj-$(CONFIG_HAS_MACH_MEMUTILS) += memutils/
 obj-$(CONFIG_PERFMAP) += perfmap.o
 
-obj-$(CONFIG_CHARGE_LEVEL) += charge_level.o
 obj-$(CONFIG_ZEN_DECISION) += msm_zen_decision.o
