@@ -1,8 +1,6 @@
 /*
- * Author: andip71, 05.11.2014
+ * Author: andip71, 18.09.2014
  *
- * Version 1.1
- * 
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
  * may be copied, distributed, and modified under those terms.
@@ -24,13 +22,16 @@
 
 static ssize_t charge_level_ac_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
+
 	// print current value
 	return sprintf(buf, "%d mA", ac_level);
+
 }
 
 
 static ssize_t charge_level_ac_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
+
 	unsigned int ret = -EINVAL;
 	int val;
 
@@ -56,13 +57,16 @@ static ssize_t charge_level_ac_store(struct kobject *kobj, struct kobj_attribute
 
 static ssize_t charge_level_usb_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
+
 	// print current value
 	return sprintf(buf, "%d mA", usb_level);
+
 }
 
 
 static ssize_t charge_level_usb_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
+
 	unsigned int ret = -EINVAL;
 	int val;
 
@@ -88,18 +92,10 @@ static ssize_t charge_level_usb_store(struct kobject *kobj, struct kobj_attribut
 
 static ssize_t charge_info_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	// no charging (both current and requested charge currents are zero)
-	if ((charge_info_level_req == 0) && (charge_info_level_cur == 0))
-		return sprintf(buf, "%s", charge_info_text);
 
-	// stock charge logic
-	if (charge_level == 0)
-		return sprintf(buf, "%s / %d mA (%d) SL", 
-				charge_info_text, charge_info_level_cur, charge_info_level_req);
+	// print charge info
+	return sprintf(buf, "%s / %d mA", charge_info_text, charge_info_level);
 
-	// non-stock charge logic
-		return sprintf(buf, "%s / %d mA (%d)", 
-			charge_info_text, charge_info_level_cur, charge_info_level_req);
 }
 
 
